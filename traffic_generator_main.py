@@ -1,5 +1,9 @@
 import threading, queue, socket, time, random, logging
 
+
+#duration = 30
+worker = 100
+
 class IoTDevice(threading.Thread):
 
 	def __init__(self,host,port,device_id):
@@ -31,9 +35,11 @@ class IoTDevice(threading.Thread):
 			self.bytes_out += len(msg)
 			self.msg_out+=1
 			self.s.send(msg)
+			logging.debug("send msg: {} ...".format(msg))
 
 			# use poll  here to implement timeout function
 			response_msg = self.s.recv(4096)
+			logging.debug("received msg: {}".format(msg))
 			self.msg_in+=1
 			self.bytes_in += len(response_msg)
 
@@ -74,13 +80,13 @@ def random_string(length):
 	return ''.join(random.choice(pool) for i in range(length))
 
 def main():
-	
-	duration = 30
+	global duration
+	global worker
 
 	logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
 
 	senders = []
-	for i in range(0,500):
+	for i in range(0,worker):
 		senders.append(IoTDevice(
 							"localhost",
 							5090,
@@ -90,7 +96,7 @@ def main():
 	for sender in senders:
 		sender.start()
 
-	input("Press Enter to continue...")
+	input("Press Enter to stop ...")
 	#time.sleep(duration)
 	msg_send = 0
 	msg_recv = 0

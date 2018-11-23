@@ -1,53 +1,8 @@
 import time, logging, queue, sys, random, threading, signal, os
-from listen_network import ListenNetwork
-from cpu import CPU
-
-class Worker(threading.Thread):
-
-	def __init__(self,
-				ingoing_pipeline,
-				outgoing_pipeline,
-				clb_func = None, # a function executed on each element of the ingoing pipeline
-				clb_args = [], # list of parameters for clb func
-				min_random_wait_to_read=0.02,
-				max_random_wait_to_read=0.03):
-	
-		if (min_random_wait_to_read>max_random_wait_to_read):
-			logging.warning(
-				"Worker initialized with bad parameters, \
-				min_random_wait_to_read must be smaller than \
-				max_random_wait_to_read but {} > {}".format(
-													min_random_wait_to_read,
-													max_random_wait_to_read))
-			return None
-
-		self.min_random_wait_to_read=min_random_wait_to_read
-		self.max_random_wait_to_read=max_random_wait_to_read
-		self.clb_func = clb_func
-		self.clb_args = clb_args
-		self.ingoing_pipeline = ingoing_pipeline
-		self.outgoing_pipeline = outgoing_pipeline
-
-		self.running = True
-		super().__init__()
-
-	def __str__(self):
-		# TODO may not work properly
-		return(super.__str__(self))
-
-	def run(self):
-		logging.debug("{} thread started ...".format(self.__str__()))
-		while(self.running):
-			device_id,request_id = self.ingoing_pipeline.get()
-			self.clb_func(self.clb_args,[device_id,request_id])
-			self.outgoing_pipeline.put((device_id,request_id),timeout=0.1)
- 
-
-	def stop(self):
-		logging.info("Stopping Worker {} ...".format(self.__str__()))
-		self.running = False
-
-
+from listen_network_interface import ListenNetworkInterface
+from send_network_interface import SendNetworkInterface
+from worker import Worker
+from load_balancer import RoundRobinLoadBalancer
 
 def sig_int_handler(signal, frame):
 	# TODO somehow not closing everything properly
@@ -64,38 +19,64 @@ RUNNING = True # controls main loop
 def main():
 	#ssignal.signal(signal.SIGINT, sig_int_handler)
 
-	logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
+	logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
 
-	network1 = ListenNetwork(t_name="test_connection",
+	# define Interface against IoT devices	
+	network_interface1 = ListenNetworkInterface(t_name="IoT_Device_Interface",
 					listen_host="localhost",
 					listen_port=5090,
 					maximum_number_of_listen_clients=10000,
-					queque_maxsize=100000
+					queque_maxsize=5000
 					)
-	network1.start()
 
-	__,last_pipeline = network1.get_fork(-1)
-	sink_pipeline = network1.get_after_work_pipeline()
+	__,out_iot_inf_pipeline = network_interface1.get_fork(-1)
+	in_iot_inf_pipeline = network_interface1.get_after_work_pipeline()
 
-	worker = []
+	lb_host_list = [("localhost",5091)]
+	round_robin_load_balancer = RoundRobinLoadBalancer(host_list=lb_host_list)
+	network_interface2 = SendNetworkInterface(t_name="Compute_Interface",
+											load_balancer=round_robin_load_balancer,
+											queque_maxsize=5000)
+
+	__,out_compute_inf_pipeline = network_interface2.get_fork(-1)
+	in_compute_inf_pipeline = network_interface2.get_after_work_pipeline()
+
+	worker_iot_compute = []
 	for i in range(0,5):
-		worker.append(Worker(last_pipeline,sink_pipeline,example_worker_callback,[]))
+		worker_iot_compute.append(Worker(out_iot_inf_pipeline,in_compute_inf_pipeline,proxy_worker_callback,[]))
 
-	for w in worker:
+	worker_compute_iot = []
+	for i in range(0,5):
+		worker_compute_iot.append(Worker(out_compute_inf_pipeline,in_iot_inf_pipeline,proxy_worker_callback,[]))
+
+	network_interface1.start()
+	network_interface2.start()
+
+	for w in worker_iot_compute:
 		w.start()	
 
-	while(RUNNING):
+	for w in worker_compute_iot:
+		w.start()	
+
+	input("Press Enter to stop ...")
+
+	#while(RUNNING):
 		# main loop
-		time.sleep(2)
+	#	time.sleep(2)
 
-	network1.stop()
+	network_interface1.stop()
+	network_interface2.stop()
 
-	for w in worker:
+	for w in worker1:
 		w.stop()
+
+	for w in worker2:
+		w.stop()
+
 
 	sys.exit(0)
 
-def example_worker_callback(args,msg):
+def proxy_worker_callback(args,msg):
 	#logging.debug("{} working ...")
 	#for i in range(140):
 	#	1.2 * 1.3

@@ -38,6 +38,12 @@ class ConnectionHandler():
 	def get_connections(self):
 		return self.connections
 
+	def get_all_sockets(self):
+		sockets = []
+		for request_id in self.connections.keys():
+			sockets.append(self.connections[request_id]["socket"])
+		return sockets	
+
 	def close_connections(self):
 		for k in self.connections.keys():
 			self.connections[k]['socket'].close()
