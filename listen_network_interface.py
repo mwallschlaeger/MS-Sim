@@ -60,12 +60,13 @@ class Source(threading.Thread):
 	def __str__(self):
 		return self.t_name 		
 
-	def initialize_socket(self):
+	def initialize_socket(self,timeout=0.1):
 		logging.info("initialized {} ...".format(self.__str__()))
 		self.serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		self.serversocket.bind((self.host,self.port))
 		self.serversocket.listen(self.maximum_number_of_clients)
+		self.serversocket.settimeout(0.5)
 		logging.info("server is now listening on port {}".format(self.port))
 		
 	def run(self):
@@ -73,11 +74,14 @@ class Source(threading.Thread):
 		while self.running: 
 			try:
 				(acc_socket, address) = self.serversocket.accept()
+			except socket.timeout as T1:
+				continue
 			except OSError as OS1:
 				# TODO: may reduce maximum number of clients
 				logging.error("TO many open files ...")
 				logging.error("{}".format(str(OS1)))
-			
+				continue
+
 			try:
 				data = acc_socket.recv(4096)
 			except InterruptedError as IE1:
@@ -96,9 +100,9 @@ class Source(threading.Thread):
 			self.network.put_work_task(device_id,request_id)
 
 	def stop(self):
+		logging.info("Stopping {} ...".format(str(self)))
 		self.running = False
-		self.serversocket.close()
-		logging.debug("Stopping {} ...".format(self.__str__))
+		#self.serversocket.close()
 
 
 class Sink(threading.Thread):
@@ -114,6 +118,8 @@ class Sink(threading.Thread):
 
 		self.error = 0
 		self.running = True
+
+		#TOOD set timeout
 		super().__init__()
 
 	def __str__(self):
@@ -122,7 +128,11 @@ class Sink(threading.Thread):
 	def run(self):
 		logging.info("initialized {} ...".format(self.__str__()))
 		while(self.running):
-			device_id, request_id = self.network.pull_work_result()
+			try:
+				device_id, request_id = self.network.pull_work_result()
+			except queue.Empty as E1:
+				continue
+
 			response_socket = self.network.get_next_connection_socket(device_id,request_id)
 			self.network.delete_connection(device_id,request_id)
 
@@ -142,8 +152,9 @@ class Sink(threading.Thread):
 				logging.warning("sending Message to {} failed, closing connection ...".format(address))
 				acc_socket.close()
 				self.error += 1
+			self.network.pull_task_done()
 			response_socket.close()
 	
 	def stop(self):
 		self.running = False
-		logging.debug("Stopping {} ...".format(self.__str__))
+		logging.info("Stopping {} ...".format(str(self)))

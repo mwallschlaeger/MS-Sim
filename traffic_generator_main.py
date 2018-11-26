@@ -1,7 +1,7 @@
 import threading, queue, socket, time, random, logging
 
 
-#duration = 30
+duration = 30
 worker = 100
 
 class IoTDevice(threading.Thread):

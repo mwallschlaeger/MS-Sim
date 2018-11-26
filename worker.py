@@ -36,7 +36,10 @@ class Worker(threading.Thread):
 	def run(self):
 		logging.debug("{} thread started ...".format(self.__str__()))
 		while(self.running):
-			device_id,request_id = self.ingoing_pipeline.get()
+			try:
+				device_id,request_id = self.ingoing_pipeline.get(timeout=0.1)
+			except queue.Empty :
+				continue
 			self.clb_func(self.clb_args,[])
 			self.outgoing_pipeline.put((device_id,request_id),timeout=0.2)
  

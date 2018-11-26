@@ -3,11 +3,10 @@ import queue, time, logging
 class ConnectionHandler():
 	# TODO IMPLEMENT TIMEOUT
 
-	def __init__(self, connection_timeout=2):
+	def __init__(self):
 		self.connections = {}
 		self.sorted_connections = []
 		
-		self.timeout = connection_timeout
 
 	def __str__(self):
 		return "ConnectionManager"

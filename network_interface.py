@@ -23,7 +23,7 @@ class NetworkInterface(ForkHandler,ConnectionHandler):
 		ConnectionHandler.__init__(self)
 
 	def __str__(self):
-		return "Network_{}".format(self.name)
+		return "Network_{}".format(self.t_name)
 
 	def build_msg(self,device_id,request_id):
 		msg = None 
@@ -48,9 +48,15 @@ class NetworkInterface(ForkHandler,ConnectionHandler):
 		self.sink.start()
 
 	def stop(self):
+		logging.info("Stopping {} ...".format(str(self)))
 		self.source.stop()
 		self.sink.stop()
-		logging.debug("Stopping {} ...".format(self.__str__))
+
+	def join(self):
+		self.sink.join()
+		self.source.join()
+
+
 
 	def put_work_task(self,device_id,request_id):
 		fork_count = 0
@@ -76,12 +82,12 @@ class NetworkInterface(ForkHandler,ConnectionHandler):
 		return -1
 		# QOS_METRIC TO REPORT!
 	
-	def pull_work_result(self,timeout=None):
-		try:			
-			device_id,request_id = self.after_work_pipeline.get(timeout=timeout)
-		except queue.Empty as CM1:
-			return None,None
+	def pull_work_result(self,timeout=0.1):
+		device_id,request_id = self.after_work_pipeline.get(timeout=timeout)
 		return device_id,request_id
+
+	def pull_task_done(self):
+		self.after_work_pipeline.task_done()
 
 	def get_before_work_pipeline(self):
 		return self.before_work_pipeline
