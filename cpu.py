@@ -1,10 +1,9 @@
-import ctypes, time, math, random, os
+import ctypes, time, math, random
 
 class CPU():
 	
 	def __init__(self):
-		shared_cpu_lib = os.path.join(os.getcwd(),"libs/utilize_cpu.so")
-		self._cpu = ctypes.CDLL(shared_cpu_lib)
+		self._cpu = ctypes.CDLL("libs/utilize_cpu.so")
 		self._cpu.utilize_cpu.argtype = (ctypes.c_int)
 		self._cpu.utilize_cpu_sqrt.argtype = (ctypes.c_int)
 
