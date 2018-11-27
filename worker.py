@@ -5,8 +5,7 @@ class Worker(threading.Thread):
 	def __init__(self,
 				ingoing_pipeline,
 				outgoing_pipeline,
-				clb_func = None, # a function executed on each element of the ingoing pipeline
-				clb_args = [], # list of parameters for clb func
+				process,
 				min_random_wait_to_read=0.02,
 				max_random_wait_to_read=0.03):
 	
@@ -21,8 +20,7 @@ class Worker(threading.Thread):
 
 		self.min_random_wait_to_read=min_random_wait_to_read
 		self.max_random_wait_to_read=max_random_wait_to_read
-		self.clb_func = clb_func
-		self.clb_args = clb_args
+		self.process = process
 		self.ingoing_pipeline = ingoing_pipeline
 		self.outgoing_pipeline = outgoing_pipeline
 
@@ -40,7 +38,7 @@ class Worker(threading.Thread):
 				device_id,request_id = self.ingoing_pipeline.get(timeout=0.1)
 			except queue.Empty :
 				continue
-			self.clb_func(self.clb_args,[])
+			self.process.execute(device_id,request_id)
 			self.outgoing_pipeline.put((device_id,request_id),timeout=0.2)
  
 
