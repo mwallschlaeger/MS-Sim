@@ -1,4 +1,4 @@
-import ctypes, time, math, random
+import ctypes, time, math, random, os
 
 class CPU():
 	
