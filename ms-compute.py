@@ -2,6 +2,8 @@
 
 import argparse, time, logging, queue, sys, random, threading, signal, os
 from listen_network_interface import ListenNetworkInterface
+from cpu import CPU
+from process import Process
 from worker import Worker
 
 RUNNING = True # controls main loop
@@ -78,19 +80,26 @@ def main():
 	for i in range(0,5):
 		w = Worker(out_proxy_inf_pipeline,
 					in_proxy_inf_pipeline,
-					compute_worker_callback,
-					[])
-		
+					ComputeProcess()
+					)
 		ELEMENTS.append(w)
 		w.start()
 
 	proxy_interface.join()
+	sys.exit(0)
 
-def compute_worker_callback(args,msg):
-	#logging.debug("{} working ...")
-	#for i in range(140):
-	#	1.2 * 1.3
-	return 0
+class ComputeProcess(Process):
+
+	def __init__(self):
+		self.cpu = CPU()
+		Process().__init__()
+
+	def __str__(self):
+		return "ComputeProcess"
+
+	def execute(self,device_id,request_id):
+		self.cpu.c_utilize_cpu_sqrt(4)
+
 
 if __name__ == '__main__':
 	main()

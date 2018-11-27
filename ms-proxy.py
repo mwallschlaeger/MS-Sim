@@ -5,7 +5,7 @@ from listen_network_interface import ListenNetworkInterface
 from send_network_interface import SendNetworkInterface
 from worker import Worker
 from load_balancer import RoundRobinLoadBalancer
-
+from process import Process
 
 RUNNING = True # controls main loop
 ELEMENTS = []
@@ -96,13 +96,24 @@ def main():
 	in_compute_inf_pipeline = network_interface2.get_after_work_pipeline()
 
 	# initialize all workers
+	proxy_to_comp = ProxyToCOmputeProcess()
 	for i in range(0,5):
-		w = Worker(out_iot_inf_pipeline,in_compute_inf_pipeline,proxy_worker_callback,[])
+		w = Worker(
+			out_iot_inf_pipeline,
+			in_compute_inf_pipeline,
+			proxy_to_comp)
 		ELEMENTS.append(w)
+		w.start()
 
+	comp_to_proxy = ComputeToProxyProcess()
 	for i in range(0,5):
-		w = Worker(out_compute_inf_pipeline,in_iot_inf_pipeline,proxy_worker_callback,[])
+		w = Worker(
+			out_compute_inf_pipeline,
+			in_iot_inf_pipeline,
+			comp_to_proxy
+			)
 		ELEMENTS.append(w)
+		w.start()
 
 	# start networking
 	ELEMENTS.append(network_interface1)
@@ -115,11 +126,29 @@ def main():
 
 	sys.exit(0)
 
-def proxy_worker_callback(args,msg):
-	#logging.debug("{} working ...")
-	#for i in range(140):
-	#	1.2 * 1.3
-	return 0
+
+class ComputeToProxyProcess(Process):
+
+	def __init__(self):
+		Process().__init__()
+
+	def __str__(self):
+		return "ProxyToCOmputeProcess"
+
+	def execute(self,device_id,request_id):
+		pass 
+
+class ProxyToCOmputeProcess(Process):
+
+	def __init__(self):
+		Process().__init__()
+
+	def __str__(self):
+		return "ProxyToCOmputeProcess"
+
+	def execute(self,device_id,request_id):
+		pass
+
 
 if __name__ == '__main__':
 	main()
