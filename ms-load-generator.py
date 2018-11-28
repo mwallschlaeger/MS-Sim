@@ -125,7 +125,8 @@ def print_report(devices,duration):
 		bad_socket += device.get_bad_socket()
 		bytes_send += device.get_send_bytes()
 		bytes_recv += device.get_recv_bytes()
-
+		device.reset_report()
+		
 	logging.info("send msg: " + str(msg_send) + \
 		   ", recv msg: " + str(msg_recv) + \
 		   ", bad_sock: " + str(bad_socket) + \
@@ -133,7 +134,7 @@ def print_report(devices,duration):
 		   ", MBytes recv: " + str(round(bytes_recv / 1000 / 1000,5)) + \
    		   ", MBits/s out: " + str(round(bytes_send / 1000 / 1000 / duration,5)) + \
 		   ", MBits/s in: " + str(round(bytes_recv / 1000 / 1000 / duration,5)))
-	device.reset_report()
+		
 
 def configure_logging(debug,filename=None):
 	if filename is None:
