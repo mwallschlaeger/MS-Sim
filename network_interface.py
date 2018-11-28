@@ -56,8 +56,6 @@ class NetworkInterface(ForkHandler,ConnectionHandler):
 		self.sink.join()
 		self.source.join()
 
-
-
 	def put_work_task(self,device_id,request_id):
 		fork_count = 0
 		for probability,pipeline in self.fork_list:

@@ -1,4 +1,4 @@
-import socket, threading, logging, random, select, sys, queue
+import socket, threading, logging, random, select, sys, queue,time
 from network_interface import NetworkInterface
 
 class SendNetworkInterface(NetworkInterface):
@@ -30,7 +30,6 @@ class SendNetworkInterface(NetworkInterface):
 		self.source = Source(t_name=t_name,
 							network=self,
 							)
-
 		
 	def add_host(self,host,port):
 		return self.load_balancer.add_host(host,port)
@@ -152,16 +151,19 @@ class Sink(threading.Thread):
 			msg = self.network.build_msg(device_id,request_id)
 			if msg is None:
 				continue
-			#try:
-			send_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			
 			address = self.load_balancer.get_next_endpoint()
 			if address is None:
 				logging.warning("{}: No loadbalancer endpoint defined, unable to send messages ...".format(str(self)))
 				continue
+			
 			try:
+				send_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 				send_socket.connect(address)
 			except ConnectionRefusedError as CRE1:
-				logging.warning("{}: connection timeout ...".format(str(self)))
+				#logging.warning("{}: connection timeout ...".format(str(self)))
+				send_socket.close()
+				self.network.pull_task_done()
 				continue
 
 			try:	

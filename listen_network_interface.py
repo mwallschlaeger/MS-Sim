@@ -60,26 +60,31 @@ class Source(threading.Thread):
 	def __str__(self):
 		return self.t_name 		
 
-	def initialize_socket(self,timeout=0.1):
+	def initialize_socket(self,timeout=2):
 		logging.info("initialized {} ...".format(self.__str__()))
 		self.serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		self.serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 		self.serversocket.bind((self.host,self.port))
 		self.serversocket.listen(self.maximum_number_of_clients)
-		self.serversocket.settimeout(0.5)
+		self.serversocket.settimeout(timeout)
 		logging.info("server is now listening on port {}".format(self.port))
 		
 	def run(self):
 		self.initialize_socket()
 		while self.running: 
+			acc_socket = None
 			try:
 				(acc_socket, address) = self.serversocket.accept()
 			except socket.timeout as T1:
+				if acc_socket is not None:
+					acc_socket.close()
 				continue
 			except OSError as OS1:
 				# TODO: may reduce maximum number of clients
 				logging.error("TO many open files ...")
 				logging.error("{}".format(str(OS1)))
+				self.serversocket.close()
+				self.initialize_socket()
 				continue
 
 			try:
@@ -87,7 +92,11 @@ class Source(threading.Thread):
 			except InterruptedError as IE1:
 				logging.warning("{}: Timeout while reading socket ...".format(str(self)))
 				logging.warning("{}".format(str(IE1)))
-
+				acc_socket.close()
+				continue				
+			except socket.timeout:
+				acc_socket.close()
+				continue
 
 			device_id,request_id = self.network.read_msg(data)
 			if device_id == None:
@@ -134,23 +143,21 @@ class Sink(threading.Thread):
 				continue
 
 			response_socket = self.network.get_next_connection_socket(device_id,request_id)
-			self.network.delete_connection(device_id,request_id)
 
 			if response_socket == None:
 				logging.error("Could not found socket in connection history ...")
 				# TODO try to delete ?
 				continue
+
+			self.network.delete_connection(device_id,request_id)
 			msg = self.network.build_msg(device_id,request_id)
-			if msg== None:
-				self.network.delete_connection(device_id,request_id)
-				continue
 
 			try:
 				response_socket.send(msg)
 				logging.debug("send message with req_id: {} on {} ...".format(request_id,str(self)))
 			except:
 				logging.warning("sending Message to {} failed, closing connection ...".format(address))
-				acc_socket.close()
+				response_socket.close()
 				self.error += 1
 			self.network.pull_task_done()
 			response_socket.close()

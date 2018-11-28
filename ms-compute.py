@@ -85,6 +85,10 @@ def main():
 		ELEMENTS.append(w)
 		w.start()
 
+	while RUNNING:
+		proxy_interface.clean(1)
+		time.sleep(2)
+
 	proxy_interface.join()
 	sys.exit(0)
 

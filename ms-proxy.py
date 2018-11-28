@@ -121,6 +121,11 @@ def main():
 	ELEMENTS.append(network_interface2)
 	network_interface2.start()
 
+	while RUNNING:
+		network_interface1.clean(1)
+		network_interface2.clean(1)
+		time.sleep(2)
+
 	network_interface2.join()
 	network_interface1.join()
 

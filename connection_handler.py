@@ -12,7 +12,6 @@ class ConnectionHandler():
 		return "ConnectionManager"
 
 	def add_connection(self,socket,address,device_id,request_id):
-	
 		t_now = time.time()
 
 		conn = {}
@@ -46,3 +45,11 @@ class ConnectionHandler():
 	def close_connections(self):
 		for k in self.connections.keys():
 			self.connections[k]['socket'].close()
+
+	def clean(self, timeout):
+		t_now = time.time()
+		keys = list(self.connections.keys())
+		for k in keys:
+			if (t_now - self.connections[k]['t_s']) > timeout:
+				self.delete_connection("",k)
+
