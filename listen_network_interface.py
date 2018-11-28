@@ -2,8 +2,8 @@ import datetime, socket, threading, queue, logging, os, time, random
 from network_interface import NetworkInterface
 
 class ListenNetworkInterface(NetworkInterface):
-	''' meta networking class'''
-
+	
+	''' meta networking class '''
 	def __init__(self,
 				t_name=None,
 				listen_host="localhost",
@@ -21,12 +21,9 @@ class ListenNetworkInterface(NetworkInterface):
 							port=listen_port
 							)
 		
-
 		self.sink = Sink(t_name=t_name,
 						network=self
 						)		
-
-
 
 class Source(threading.Thread):
 
@@ -85,6 +82,7 @@ class Source(threading.Thread):
 				logging.error("{}".format(str(OS1)))
 				self.serversocket.close()
 				self.initialize_socket()
+				self.network.delete_all_connections()
 				continue
 
 			try:
@@ -113,13 +111,11 @@ class Source(threading.Thread):
 		self.running = False
 		#self.serversocket.close()
 
-
 class Sink(threading.Thread):
 	''' sending packets to other hosts '''
 	def __init__(self,
 				t_name,
-				network,
-				#lb_func=None
+				network
 				):
 
 		self.t_name = t_name + "_Sink"

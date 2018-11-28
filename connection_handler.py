@@ -33,6 +33,12 @@ class ConnectionHandler():
 	def delete_connection(self,device_id,request_id):
 		del self.connections[request_id]
 
+	def delete_all_connections():
+		keys = list(self.connections.keys())
+		for k in keys:
+			self.delete_connection("",k)
+
+
 	def get_connections(self):
 		return self.connections
 

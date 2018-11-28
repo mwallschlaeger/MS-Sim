@@ -45,13 +45,18 @@ class IoTDevice(threading.Thread):
 		self.msg_out = 0
 		self.msg_in = 0
 		self.bad_socket = 0
+		self.timeouts = 0
+
+	def wait_to_send(self):
+		t = random.uniform(self.interval - (self.interval /10),self.interval + (self.interval / 10))
+		time.sleep(t)
 
 	def run(self):
-		
 		while self.running:
 			try:
 				self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 				self.s.connect(self.load_balancer.get_next_endpoint())
+				self.s.settimeout(2)
 			except OSError as os_error:
 				logging.debug("{}: Could not assign request addr, proxy overloaded ...".format(str(self)))
 				time.sleep(self.empty_queue_timeout)
@@ -59,24 +64,33 @@ class IoTDevice(threading.Thread):
 			msg = self.build_msg()
 			self.bytes_out += len(msg)
 			self.msg_out+=1
-			self.s.send(msg)
+			try:
+				self.s.send(msg)
+			except ConnectionResetError:
+				self.bad_socket += 1
+				continue
+
 			logging.debug("{}: send msg: ...".format(str(self)))
 
 			# use poll  here to implement timeout function
 			try:
 				response_msg = self.s.recv(4096)
+			except socket.timeout:
+				self.timeouts += 1
+				self.s.close()
+				self.wait_to_send()
+				continue
 			except ConnectionResetError as CRE1:
 				self.s.close()
 				self.bad_socket += 1
+				self.wait_to_send()
 				continue
 
 			logging.debug("{}: received msg ...".format(str(self)))
 			self.msg_in+=1
 			self.bytes_in += len(response_msg)
-
+			self.wait_to_send()
 			self.s.close()
-			t = random.uniform(self.interval - (self.interval /10),self.interval + (self.interval / 10))
-			time.sleep(t)
 
 	def get_padding(self):
 		return self.padding
@@ -89,7 +103,6 @@ class IoTDevice(threading.Thread):
 	def stop(self):
 		logging.debug("{}: stopping device ...".format(str(self)))
 		self.running = False
-
 
 	# reporting
 	def get_send_msg(self):
@@ -107,6 +120,9 @@ class IoTDevice(threading.Thread):
 	def get_bad_socket(self):
 		return self.bad_socket
 
+	def get_timeouts(self):
+		return self.timeouts
+
 # https://stackoverflow.com/questions/976577/random-hash-in-python ported to p3
 def random_string(length):
 	import string
@@ -119,19 +135,23 @@ def print_report(devices,duration):
 	bytes_send = 0
 	bytes_recv = 0 
 	bad_socket = 0
+	timeouts = 0
 	for device in devices:
 		msg_send += device.get_send_msg()
 		msg_recv += device.get_recv_msg()
 		bad_socket += device.get_bad_socket()
+		timeouts += device.get_timeouts()
 		bytes_send += device.get_send_bytes()
 		bytes_recv += device.get_recv_bytes()
+
 		device.reset_report()
 	logging.info("send msg: " + str(msg_send) + \
 		   ", recv msg: " + str(msg_recv) + \
 		   ", bad_sock: " + str(bad_socket) + \
+		   ", timeouts: " + str(timeouts) + \
 		   ", MBytes send: " + str(round(bytes_send / 1000,5)) + \
 		   ", MBytes recv: " + str(round(bytes_recv / 1000 ,5)) + \
-   		   ", MBits/s out: " + str(round(bytes_send / 1000 / duration,5)) + \
+		   ", MBits/s out: " + str(round(bytes_send / 1000 / duration,5)) + \
 		   ", MBits/s in: " + str(round(bytes_recv / 1000 / duration,5)))
 		
 
@@ -195,7 +215,6 @@ def main():
 		logging.debug("debug mode enabled")
 	logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
 
-
 	# define loadbalancer 
 	lb_host_list = []
 	for c in args.proxy:
@@ -216,7 +235,6 @@ def main():
 		ELEMENTS.append(iot_device)
 		iot_device.start()
 
-
 	if args.duration == -1:
 		while(RUNNING):
 			time.sleep(report_interval)
@@ -225,7 +243,6 @@ def main():
 		time.sleep(args.duration)	
 		print_report(iot_devices,args.duration)
 	RUNNING = False
-
 	sys.exit(0)
 
 if __name__ == '__main__':
