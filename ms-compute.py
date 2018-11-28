@@ -102,7 +102,7 @@ class ComputeProcess(Process):
 		return "ComputeProcess"
 
 	def execute(self,device_id,request_id):
-		self.cpu.c_utilize_cpu_sqrt(5)
+		self.cpu.c_utilize_cpu_sqrt(15)
 
 
 if __name__ == '__main__':
