@@ -1,0 +1,3 @@
+[submodule "stress-ng"]
+  path = stress-ng
+  url = git@github.com:mwallschlaeger/stress-ng.git
