@@ -3,7 +3,7 @@ import time, logging, queue, threading
 class Worker(threading.Thread):
 
 	def __init__(self,
-				ingoing_pipeline,
+				incoming_pipeline,
 				outgoing_pipeline,
 				process,
 				min_random_wait_to_read=0.02,
@@ -21,7 +21,7 @@ class Worker(threading.Thread):
 		self.min_random_wait_to_read=min_random_wait_to_read
 		self.max_random_wait_to_read=max_random_wait_to_read
 		self.process = process
-		self.ingoing_pipeline = ingoing_pipeline
+		self.incoming_pipeline = incoming_pipeline
 		self.outgoing_pipeline = outgoing_pipeline
 
 		self.running = True
@@ -35,7 +35,7 @@ class Worker(threading.Thread):
 		logging.debug("{} thread started ...".format(self.__str__()))
 		while(self.running):
 			try:
-				device_id,request_id = self.ingoing_pipeline.get(timeout=0.1)
+				device_id,request_id = self.incoming_pipeline.get(timeout=0.1)
 			except queue.Empty :
 				continue
 			self.process.execute(device_id,request_id)
