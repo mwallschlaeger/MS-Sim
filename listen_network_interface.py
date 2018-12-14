@@ -91,7 +91,7 @@ class Source(threading.Thread):
 				logging.warning("{}: Timeout while reading socket ...".format(str(self)))
 				logging.warning("{}".format(str(IE1)))
 				acc_socket.close()
-				continue				
+				continue
 			except socket.timeout:
 				acc_socket.close()
 				continue
@@ -137,9 +137,12 @@ class Sink(threading.Thread):
 				device_id, request_id = self.network.pull_work_result()
 			except queue.Empty as E1:
 				continue
-
-			response_socket = self.network.get_next_connection_socket(device_id,request_id)
-
+			try:
+				response_socket = self.network.get_next_connection_socket(device_id,request_id)
+			except KeyError as KE1:
+				logging.error("Could not found socket in connection history ...")
+				continue
+			# IF deprecated? with handled exception?
 			if response_socket == None:
 				logging.error("Could not found socket in connection history ...")
 				# TODO try to delete ?
