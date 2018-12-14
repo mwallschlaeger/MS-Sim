@@ -5,7 +5,7 @@ from fork_handler import ForkHandler
 
 class NetworkInterface(ForkHandler,ConnectionHandler):
 
-	def __init__(self,t_name=None,queque_maxsize=1000, put_work_task_timeout=0.1):
+	def __init__(self,t_name=None,queque_maxsize=1000, put_work_task_timeout=0.01):
 
 		if t_name == None:
 			t_name = str(random.getrandbits(16))
@@ -80,7 +80,7 @@ class NetworkInterface(ForkHandler,ConnectionHandler):
 		return -1
 		# QOS_METRIC TO REPORT!
 	
-	def pull_work_result(self,timeout=0.1):
+	def pull_work_result(self,timeout=0.01):
 		device_id,request_id = self.after_work_pipeline.get(timeout=timeout)
 		return device_id,request_id
 
