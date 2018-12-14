@@ -1,31 +1,46 @@
-import ctypes, time, math, random
+import time, math, random
+from sim import MSSimObject
 
-class CPU():
+import importlib.util
+spec = importlib.util.spec_from_file_location("stress_ng", "stress-ng/bindings/stress_ng.py")
+stress_ng = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(stress_ng)
+
+
+class CPU(MSSimObject):
 	
-	def __init__(self):
-		self._cpu = ctypes.CDLL("libs/utilize_cpu.so")
-		self._cpu.utilize_cpu.argtype = (ctypes.c_int)
-		self._cpu.utilize_cpu_sqrt.argtype = (ctypes.c_int)
+	t_name = "CPU_Stress"
+	''' max_ops = number of loops to run 
+		method = stress-ng cpu method to execute '''
+	def __init__(self,max_ops=3,method=""):
+		self.conf["max_ops"] = max_ops
+		self.conf["method"] = method
+		self.metrics["perfomed_operations"] = 0
+		self.metrics["failed_operations"] = 0
+		super().__init__()
 
 	def __str__(self):
-		return "CPU"
+		return "CPU" # TODO
 
-	def c_utilize_cpu(self,loops):
-		loops *= 1000
-		#array_type = ctypes.c_int * num_numbers
-		result = self._cpu.utilize_cpu(ctypes.c_int(loops))
-		return int(result)
-	
-	# loops 100 ~ 25
-	def c_utilize_cpu_sqrt(self,loops):
-		loops *= 1000
-		result = self._cpu.utilize_cpu_sqrt(ctypes.c_int(loops))
-		return int(result)
+	def get_methods(self):
+		return stress_ng.CPU_METHODS
 
-	def py_utilize_cpu_sqrt(self,loops):
-		FLT_MAX = 3.402823e+38
-		FLT_MIN = 1.175494e-38
-		for i in range(loops):
-			r = random.uniform(FLT_MIN,FLT_MAX)
-			math.sqrt(r*r)
+	''' recommended '''
+	def utilize_cpu(self):
+		result = stress_ng.stress_cpu(method=self.conf["method"],max_ops=self.conf["max_ops"])
+		if result == 0:
+			self.metrics["perfomed_operations"] += self.conf["max_ops"]
+		else:
+			self.metrics["failed_operations"] += self.conf["max_ops"]		
+		return result
+
+	''' not recommended '''
+	def utilize_cpu_ms_sim(self):
+		for i in range(self.__conf["max_ops"]):
+			result = stress_ng.ms_sim_stress_cpu(method=self.conf["method"],max_ops=self.conf["max_ops"])
+			if result == 0:
+				self.metrics["perfomed_operations"] += self.conf["max_ops"]
+			else:
+				self.metrics["failed_operations"] += self.conf["max_ops"]
+			time.sleep(0.1)
 		return 0
