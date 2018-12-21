@@ -1,6 +1,7 @@
-#Microservice Simulation
+Microservice Simulation
 
-ms-sim is a toolbox designed to ..
+ms-sim is a toolbox designed to build artificial microservices. Each microservice can be connected to others and utilizes a different set of resources. Python3 bindings for Stress-ng were called to 
+utilize the resources.
 
 Clone:
 git clone --recurse-submodules https://gitlab.tubit.tu-berlin.de/tibut/MS-Sim.git
