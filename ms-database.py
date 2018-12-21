@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-import cProfile
 import argparse, time, logging, queue, sys, random, threading, signal, os
 from listen_network_interface import ListenNetworkInterface
 from send_network_interface import SendNetworkInterface
@@ -8,39 +7,25 @@ from worker import Worker
 from vm import VM
 from load_balancer import RoundRobinLoadBalancer
 from process import Process
+import helper
 
 RUNNING = True # controls main loop
 ELEMENTS = []
 t_name = "MS-DATABASE"
 
-
-def configure_logging(debug,filename=None):
-	if filename is None:
-		if debug:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-	else:
-		if debug:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.INFO)
-
 def sig_int_handler(signal, frame):
-	# TODO somehow not closing everything properly
 
 	global RUNNING
 	global ELEMENTS
-
 	if RUNNING == False:
 		os.kill(signal.CTRL_C_EVENT, 0)
 		
 	RUNNING = False
 	for e in ELEMENTS:
 		e.stop()
-	
+
 def main():
-	global ELEMENTS
+	global ELEMENTS, RUNNING
 	signal.signal(signal.SIGINT, sig_int_handler)
 
 	parser = argparse.ArgumentParser()
@@ -65,10 +50,12 @@ def main():
 
 	if args.log:
 		logfile = args.log
-		configure_logging(debug,logfile)
+		helper.configure_logging(debug,logfile)
 	else:
-		configure_logging(debug)
+		helper.configure_logging(debug)
 		logging.debug("debug mode enabled")
+
+	structure = {}
 
 # 1. IoT devices send data to Proxy
 # (2. Proxy asks Authenticate for authentification) only some %
@@ -99,22 +86,20 @@ def main():
 					maximum_number_of_listen_clients=args.max_clients,
 					queque_maxsize=args.queue_size
 					)
-
-	# get pipeline for incoming traffic
-	__,in_cloud_compute_pl = cloud_compute_interface.get_fork(-1)
-
 	# get pipeline for traffic send to cloud compute
 	out_cloud_compute_pl = cloud_compute_interface.get_after_work_pipeline()
+	
+	# get pipeline for incoming traffic
+	__,in_cloud_compute_pl = cloud_compute_interface.fork_handler.get_fork(-1)
 
 	# initialize all workers
-	database_process = ForwardingProcess("test")
-
-#	database_process = DatabaseProcess()
-	for i in range(0,4):
+	database_process = DatabaseProcess("DatabaseProcess")
+	for i in range(0,1):
 		w = Worker(
-			in_cloud_compute_pl,
-			out_cloud_compute_pl,
-			database_process)
+			t_name="database_worker",
+			incoming_pipeline=in_cloud_compute_pl,
+			outgoing_pipeline=out_cloud_compute_pl,
+			process=database_process)
 		ELEMENTS.append(w)
 		w.start()
 
@@ -122,9 +107,10 @@ def main():
 	ELEMENTS.append(cloud_compute_interface)
 	cloud_compute_interface.start()
 
-	#while RUNNING:
-	for i in range(10):
-		cloud_compute_interface.clean(args.cleaning_interval)
+	helper.print_metrics([cloud_compute_interface,database_process],print_header=True)
+	while RUNNING:
+		cloud_compute_interface.connection_handler.clean(args.cleaning_interval)
+		helper.print_metrics([cloud_compute_interface,database_process])
 		time.sleep(2)
 
 	RUNNING = False
@@ -135,14 +121,12 @@ def main():
 
 class DatabaseProcess(Process):
 
-	t_name = "DatabaseProcess"
-
-	def __init__(self):
+	def __init__(self,t_name):
+		Process.__init__(self)
 		vm_bytes=1024 * 16000 
 		self.vm = VM(method="zero-one",vm_bytes=vm_bytes) #MB
 		self.conf["database_requests"] = 0
 		self.children["VM"] = self.vm
-		Process().__init__()
 
 	def execute(self,device_id,request_id):
 		self.conf["database_requests"] += 1
@@ -150,6 +134,4 @@ class DatabaseProcess(Process):
 		# requires hdd operations and randomness
 
 if __name__ == '__main__':
-
 	main()
-

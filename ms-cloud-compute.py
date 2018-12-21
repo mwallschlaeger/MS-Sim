@@ -8,23 +8,11 @@ from cpu import CPU
 from vm import VM
 from process import Process, ForwardingProcess
 from worker import Worker
+import helper
 
 RUNNING = True # controls main loop
 ELEMENTS = []
 t_name = "MS-CLOUD-COMPUTE"
-
-
-def configure_logging(debug,filename=None):
-	if filename is None:
-		if debug:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-	else:
-		if debug:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.INFO)
 
 def sig_int_handler(signal, frame):
 
@@ -67,9 +55,9 @@ def main():
 
 	if args.log:
 		logfile = args.log
-		configure_logging(debug,logfile)
+		helper.configure_logging(debug,logfile)
 	else:
-		configure_logging(debug)
+		helper.configure_logging(debug)
 		logging.debug("debug mode enabled")
 
 # 1. IoT devices send data to Proxy
@@ -110,7 +98,7 @@ def main():
 		logging,error("{} Unable to set a Percentile greater 100. (-cached_percentile).".format(t_name))
 		sys.exit(1)
 	in_edge_cached_pl = queue.Queue(maxsize=args.queue_size) # maybe define helper function
-	edge_interface.add_fork(pipeline=in_edge_cached_pl,probability=args.cached_percentile,pos=0)
+	edge_interface.fork_handler.add_fork(pipeline=in_edge_cached_pl,probability=args.cached_percentile,pos=0)
 	# setup pipeline for requests which require database request
 	if args.database_request_percentile < 0:
 		logging.error("{} Negative Percentile for database equests(-database_request_percentile).".format(t_name))
@@ -119,10 +107,10 @@ def main():
 		logging,error("{} Unable to set a Percentile greater 100. (-cached_percentile).".format(t_name))
 		sys.exit(1)
 	in_edge_database_pl = queue.Queue(maxsize=args.queue_size) # maybe define helper function
-	edge_interface.add_fork(pipeline=in_edge_database_pl,probability=args.database_request_percentile,pos=0)	
+	edge_interface.fork_handler.add_fork(pipeline=in_edge_database_pl,probability=args.database_request_percentile,pos=0)	
 
 	# get pipeline for compute only requests
-	__,in_edge_compute_only_pl = edge_interface.get_fork(-1)
+	__,in_edge_compute_only_pl = edge_interface.fork_handler.get_fork(-1)
 
 	# define cloud loadbalancer 
 	database_lb_host_list = []
@@ -139,40 +127,47 @@ def main():
 	# get pipeline for traffic to send to database
 	out_databae_pl = database_interface.get_after_work_pipeline()
 	
+	# forwarding shortcut
+	#cloud_compute_interface.set_default_fork_pipeline(out_cloud_compute_pl)
+	
 	# initialize  workers
 	cache_process = CacheProcess()
 	for i in range(0,1):
 		w = Worker(
-			in_edge_cached_pl,
-			out_edge_pl,
-			cache_process)
+			t_name="CacheProcess_Worker",
+			incoming_pipeline=in_edge_cached_pl,
+			outgoing_pipeline=out_edge_pl,
+			process=cache_process)
 		ELEMENTS.append(w)
 		w.start()
 
-	database_request_process = ForwardingProcess("DatabaseRequestProcess") # maybe small computation here
+	database_request_process = ForwardingProcess() # maybe small computation here
 	for i in range(0,1):
 		w = Worker(
-			in_edge_database_pl,
-			out_databae_pl,
-			database_request_process)
+			t_name="DatabaseRequestProcess_Worker",
+			incoming_pipeline=in_edge_database_pl,
+			outgoing_pipeline=out_databae_pl,
+			process=database_request_process)
 		ELEMENTS.append(w)
 		w.start()
 	
 	compute_process = ComputeProcess() 
 	for i in range(0,1):
 		w = Worker(
-			in_edge_compute_only_pl,
-			out_edge_pl,
-			compute_process)
+			t_name="ComputeProcess_Worker",
+			incoming_pipeline=in_edge_compute_only_pl,
+			outgoing_pipeline=out_edge_pl,
+			process=compute_process)
 		ELEMENTS.append(w)
 		w.start()
 
 	database_response_process = ComputeDatabaseResponseProcess() 
 	for i in range(0,1):
 		w = Worker(
-			in_edge_compute_only_pl,
-			out_edge_pl,
-			compute_process)
+			t_name="ComputeDatabaseResponseProcess_Worker",
+			incoming_pipeline=in_edge_compute_only_pl,
+			outgoing_pipeline=out_edge_pl,
+			process=compute_process)
 		ELEMENTS.append(w)
 		w.start()
 
@@ -183,8 +178,8 @@ def main():
 	database_interface.start()
 
 	while RUNNING:
-		edge_interface.clean(timeout=1)
-		database_interface.clean(timeout=1)
+		edge_interface.connection_handler.clean(timeout=1)
+		database_interface.connection_handler.clean(timeout=1)
 		time.sleep(args.cleaning_interval)
 
 	edge_interface.join()
@@ -194,36 +189,33 @@ def main():
 
 class CacheProcess(Process):
 
-	t_name = "CacheProcess"
-
 	def __init__(self):
+		super().__init__()
+		self.t_name = "CacheProcess"
 		vm_bytes=1024*2000
 		self.vm = VM(method="zero-one",vm_bytes=vm_bytes)
 		self.children["VM"]=self.vm
-		Process().__init__()
 
 	def execute(self,device_id,request_id):
 		self.vm.utilize_vm()
 
-
 class ComputeProcess(Process):
 
-	t_name = "ComputeProcess"
-
 	def __init__(self):
+		super().__init__()
+		self.t_name = "ComputeProcess"
 		self.cpu = CPU(method="nsqrt",max_ops=10)
 		self.children["CPU"]=self.cpu
-		Process().__init__()
 
 	def execute(self,device_id,request_id):
 		self.cpu.utilize_cpu()
 
-
 class ComputeDatabaseResponseProcess(Process):
 
-	t_name = "ComputeDatabaseResponseProcess"
 
 	def __init__(self):
+		super().__init__()
+		self.t_name = "ComputeDatabaseResponseProcess"
 		vm_bytes= 1024*8000
 		self.cpu = CPU(method="nsqrt",max_ops=10)
 		self.vm = VM(method="flip",vm_bytes=vm_bytes)

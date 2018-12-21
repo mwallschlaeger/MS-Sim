@@ -6,22 +6,11 @@ from send_network_interface import SendNetworkInterface
 from worker import Worker
 from load_balancer import RoundRobinLoadBalancer
 from process import Process, ForwardingProcess
+import helper
 
 RUNNING = True # controls main loop
 ELEMENTS = []
 t_name = "MS-PROXY"
-
-def configure_logging(debug,filename=None):
-	if filename is None:
-		if debug:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-	else:
-		if debug:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.INFO)
 
 def sig_int_handler(signal, frame):
 	# TODO somehow not closing everything properly
@@ -45,11 +34,12 @@ def main():
 	
 	# proxy
 	parser.add_argument("-listen_port",type=int, default=5090,help="Port to listen for incoming messages")
-	parser.add_argument("-authenticate",action='append',help="a Compute node to interact with",required=True)
+	parser.add_argument("-authentication",action='append',help="a Compute node to interact with",required=True)
 	parser.add_argument("-authenticate_port",type=int,default=5092,help="Port the compute nodes are listening on")
 	parser.add_argument("-authentication_percentile",type=int,default=10,help="a Compute node to interact with")
 	parser.add_argument("-compute",action='append',help="a Compute node to interact with",required=True)
 	parser.add_argument("-compute_port",type=int,default=5091,help="Port the compute nodes are listening on")
+	parser.add_argument("-optimized",action='store_true',help="run with reduced amount of threads and pipes")
 	parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to proxy")
 	parser.add_argument("-queue_size",type=int,default=5000,help="Size of interal processing queue")
 
@@ -68,9 +58,9 @@ def main():
 
 	if args.log:
 		logfile = args.log
-		configure_logging(debug,logfile)
+		helper.configure_logging(debug,logfile)
 	else:
-		configure_logging(debug)
+		helper.configure_logging(debug)
 		logging.debug("debug mode enabled")
 
 # 1. IoT devices send data to Proxy
@@ -95,95 +85,152 @@ def main():
 # IoT------##############				################	|
 #															|
 	
+	# DEFAULT WAY
+	if not args.optimized:
+		# define Interface against IoT devices	
+		iot_interface = ListenNetworkInterface(t_name="IoT_Device_Interface",
+						listen_host="0.0.0.0",
+						listen_port=args.listen_port,
+						maximum_number_of_listen_clients=args.max_clients,
+						queque_maxsize=args.queue_size)	
+		# setup pipeline to authentication, for 10% of all request comming from IoT devices
+		if args.authentication_percentile < 0:
+			logging.error("{} Negative Percentile for Authentication requests(-authentication_percentile).".format(t_name))
+			sys.exit(1)
+		if args.authentication_percentile > 100:
+			logging,error("{} Unable to set a Percentile greater 100. (-authentication_percentile).".format(t_name))
+			sys.exit(1)
+		in_iot_out_authentication_pl = queue.Queue(maxsize=args.queue_size) # maybe define helper function
+		iot_interface.fork_handler.add_fork(pipeline=in_iot_out_authentication_pl,probability=args.authentication_percentile,pos=0)
+		# get pipeline for incoming traffic from IoT devices
+		__,in_iot_out_compute_pl = iot_interface.fork_handler.get_fork(-1)
 
-	# define Interface against IoT devices	
-	iot_interface = ListenNetworkInterface(t_name="IoT_Device_Interface",
-					listen_host="0.0.0.0",
-					listen_port=args.listen_port,
-					maximum_number_of_listen_clients=args.max_clients,
-					queque_maxsize=args.queue_size)	
-	# setup pipeline to authentication, for 10% of all request comming from IoT devices
-	if args.authentication_percentile < 0:
-		logging.error("{} Negative Percentile for Authentication requests(-authentication_percentile).".format(t_name))
-		sys.exit(1)
-	if args.authentication_percentile > 100:
-		logging,error("{} Unable to set a Percentile greater 100. (-authentication_percentile).".format(t_name))
-		sys.exit(1)
-	iot_interface.add_fork(pipeline=in_iot_out_authentication_pl,probability=args.authentication_percentile,pos=0)
-	in_iot_out_authentication_pl = queue.Queue(maxsize=args.queue_size) # maybe define helper function
-	# get pipeline for incoming traffic from IoT devices
-	__,in_iot_out_compute_pl = iot_interface.get_fork(-1)
+		# define authenticate loadbalancer 
+		authenticate_lb_host_list = []
+		for c in args.authentication:
+			authenticate_lb_host_list.append((c,args.authenticate_port))
+		# define Interface against Authenticate devices	
+		authenticate_load_balancer = RoundRobinLoadBalancer(host_list=authenticate_lb_host_list)
+		authentication_interface = SendNetworkInterface(t_name="Authenticate_Interface",
+												load_balancer=authenticate_load_balancer,
+												queque_maxsize=args.queue_size)
+		# get pipeline for incoming traffic from authentication
+		__,in_authentication_out_compute_pl = authentication_interface.fork_handler.get_fork(-1)
 
-	# define authenticate loadbalancer 
-	authenticate_lb_host_list = []
-	for c in args.authenticate:
-		authenticate_lb_host_list.append((c,args.authenticate_port))
-	# define Interface against Authenticate devices	
-	authenticate_load_balancer = RoundRobinLoadBalancer(host_list=authenticate_lb_host_list)
-	authentication_interface = SendNetworkInterface(t_name="Authenticate_Interface",
-											load_balancer=authenticate_load_balancer,
-											queque_maxsize=args.queue_size)
-	# get pipeline for incoming traffic from authentication
-	__,in_authentication_out_compute_pl = authentication_interface.get_fork(-1)
+		# define compute loadbalancer 
+		compute_lb_host_list = []
+		for c in args.compute:
+			compute_lb_host_list.append((c,args.compute_port))
+		compute_load_balancer = RoundRobinLoadBalancer(host_list=compute_lb_host_list)
+		# define Interface against Compute nodes
+		compute_interface = SendNetworkInterface(t_name="Compute_Interface",
+												load_balancer=compute_load_balancer,
+												queque_maxsize=args.queue_size)
+		# get pipeline for incoming traffic from compute
+		__,in_compute_out_iot_pl = authentication_interface.fork_handler.get_fork(-1)
+		
+		
+		# get pipeline for traffic to send to IoT devices
+		out_iot_pl = iot_interface.get_after_work_pipeline()
+		# get pipeline for traffic to send to authenticate
+		out_authentication_pl = authentication_interface.get_after_work_pipeline()
+		# get pipeline for traffic to send to Compute instances
+		out_compute_pl = compute_interface.get_after_work_pipeline()
 
-	# define compute loadbalancer 
-	compute_lb_host_list = []
-	for c in args.compute:
-		compute_lb_host_list.append((c,args.compute_port))
-	compute_load_balancer = RoundRobinLoadBalancer(host_list=compute_lb_host_list)
-	# define Interface against Compute nodes
-	compute_interface = SendNetworkInterface(t_name="Compute_Interface",
-											load_balancer=compute_load_balancer,
-											queque_maxsize=args.queue_size)
-	# get pipeline for incoming traffic from compute
-	__,in_compute_out_iot_pl = authentication_interface.get_fork(-1)
-	
-	
-	# get pipeline for traffic to send to IoT devices
-	out_iot_pl = iot_interface.get_after_work_pipeline()
-	# get pipeline for traffic to send to authenticate
-	out_authentication_pl = authentication_interface.get_after_work_pipeline()
-	# get pipeline for traffic to send to Compute instances
-	out_compute_pl = compute_interface.get_after_work_pipeline()
+		# initialize  workers
+		proxy_to_authentication = ForwardingProcess()
+		for i in range(0,1):
+			w = Worker(
+				t_name="ProxyToAuthenticationProcess_Worker",
+				incoming_pipeline=in_iot_out_authentication_pl,
+				outgoing_pipeline=out_authentication_pl,
+				process=proxy_to_authentication
+				)
+			ELEMENTS.append(w)
+			w.start()
+		
+		authentication_to_compute = ForwardingProcess()
+		for i in range(0,1):
+			w = Worker(
+				t_name="AuthenticationToProxyProcess_Worker",
+				incoming_pipeline=in_authentication_out_compute_pl,
+				outgoing_pipeline=out_authentication_pl,
+				process=authentication_to_compute
+				)
+			ELEMENTS.append(w)
+			w.start()
 
-	# initialize  workers
-	proxy_to_authentication = ForwardingProcess("ProxyToAuthenticationProcess")
-	for i in range(0,1):
-		w = Worker(
-			in_iot_out_authentication_pl,
-			out_authentication_pl,
-			proxy_to_authentication)
-		ELEMENTS.append(w)
-		w.start()
-	
-	authentication_to_compute = ForwardingProcess("AuthenticationToProxyProcess")
-	for i in range(0,1):
-		w = Worker(
-			in_authentication_out_compute_pl,
-			out_authentication_pl,
-			authentication_to_compute)
-		ELEMENTS.append(w)
-		w.start()
+		proxy_to_comp = ForwardingProcess()
+		for i in range(0,1):
+			w = Worker(
+				t_name="ProxyToComputeProcess_Worker",
+				incoming_pipeline=in_iot_out_compute_pl,
+				outgoing_pipeline=out_compute_pl,
+				process=proxy_to_comp
+				)
+			ELEMENTS.append(w)
+			w.start()
 
-	proxy_to_comp = ForwardingProcess("ProxyToComputeProcess")
-	for i in range(0,1):
-		w = Worker(
-			in_iot_out_compute_pl,
-			out_compute_pl,
-			proxy_to_comp
-			)
-		ELEMENTS.append(w)
-		w.start()
+		comp_to_proxy = ForwardingProcess()
+		for i in range(0,1):
+			w = Worker(
+				t_name="ComputeToProxyProcess_Worker",
+				incoming_pipeline=in_compute_out_iot_pl,
+				outgoing_pipeline=out_iot_pl,
+				process=comp_to_proxy
+				)
+			ELEMENTS.append(w)
+			w.start()
 
-	comp_to_proxy = ForwardingProcess("ComputeToProxyProcess")
-	for i in range(0,1):
-		w = Worker(
-			in_compute_out_iot_pl,
-			out_iot_pl,
-			comp_to_proxy
-			)
-		ELEMENTS.append(w)
-		w.start()
+	# OPTIMIZED WAY
+	else: 
+		# define Interface against IoT devices	
+		iot_interface = ListenNetworkInterface(t_name="IoT_Device_Interface",
+						listen_host="0.0.0.0",
+						listen_port=args.listen_port,
+						maximum_number_of_listen_clients=args.max_clients,
+						queque_maxsize=args.queue_size)	
+		# get pipeline for traffic to send to IoT devices
+		out_iot_pl = iot_interface.get_after_work_pipeline()
+
+		# define authenticate loadbalancer 
+		authenticate_lb_host_list = []
+		for c in args.authentication:
+			authenticate_lb_host_list.append((c,args.authenticate_port))
+		# define Interface against Authenticate devices	
+		authenticate_load_balancer = RoundRobinLoadBalancer(host_list=authenticate_lb_host_list)
+		authentication_interface = SendNetworkInterface(t_name="Authenticate_Interface",
+												load_balancer=authenticate_load_balancer,
+												queque_maxsize=args.queue_size)
+		# get pipeline for traffic to send to authenticate
+		out_authentication_pl = authentication_interface.get_after_work_pipeline()
+
+		# define compute loadbalancer 
+		compute_lb_host_list = []
+		for c in args.compute:
+			compute_lb_host_list.append((c,args.compute_port))
+		compute_load_balancer = RoundRobinLoadBalancer(host_list=compute_lb_host_list)
+		# define Interface against Compute nodes
+		compute_interface = SendNetworkInterface(t_name="Compute_Interface",
+												load_balancer=compute_load_balancer,
+												queque_maxsize=args.queue_size)
+		# get pipeline for traffic to send to Compute instances
+		out_compute_pl = compute_interface.get_after_work_pipeline()
+
+		# setup pipeline to authentication, for 10% of all request comming from IoT devices
+		if args.authentication_percentile < 0:
+			logging.error("{} Negative Percentile for Authentication requests(-authentication_percentile).".format(t_name))
+			sys.exit(1)
+		if args.authentication_percentile > 100:
+			logging,error("{} Unable to set a Percentile greater 100. (-authentication_percentile).".format(t_name))
+			sys.exit(1)
+		iot_interface.fork_handler.add_fork(pipeline=out_authentication_pl,probability=args.authentication_percentile,pos=0)
+		# set default pipeline for incoming traffic from IoT devices to send to compute 
+		iot_interface.fork_handler.set_default_fork_pipeline(out_compute_pl)
+		# set default pipeline for incoming traffic from Authentication service to send to compute 
+		authentication_interface.fork_handler.set_default_fork_pipeline(out_compute_pl)
+		compute_interface.fork_handler.set_default_fork_pipeline(out_iot_pl)
+		
 
 	# start networking
 	ELEMENTS.append(iot_interface)
@@ -194,9 +241,9 @@ def main():
 	compute_interface.start()
 
 	while RUNNING:
-		iot_interface.clean(timeout=1)
-		authentication_interface.clean(timeout=1)
-		compute_interface.clean(timeout=1)
+		iot_interface.connection_handler.clean(timeout=1)
+		authentication_interface.connection_handler.clean(timeout=1)
+		compute_interface.connection_handler.clean(timeout=1)
 		time.sleep(args.cleaning_interval)
 
 	iot_interface.join()

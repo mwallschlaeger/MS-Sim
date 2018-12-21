@@ -8,23 +8,12 @@ from cpu import CPU
 from vm import VM
 from process import Process, ForwardingProcess
 from worker import Worker
+import helper
 
 RUNNING = True # controls main loop
 ELEMENTS = []
 t_name = "MS-COMPUTE"
 
-
-def configure_logging(debug,filename=None):
-	if filename is None:
-		if debug:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-	else:
-		if debug:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.INFO)
 
 def sig_int_handler(signal, frame):
 
@@ -68,9 +57,9 @@ def main():
 
 	if args.log:
 		logfile = args.log
-		configure_logging(debug,logfile)
+		helper.configure_logging(debug,logfile)
 	else:
-		configure_logging(debug)
+		helper.configure_logging(debug)
 		logging.debug("debug mode enabled")
 
 # 1. IoT devices send data to Proxy
@@ -94,7 +83,7 @@ def main():
 #	  1 |  # 5090 PROXY #---------------# 5091 COMPUTE #	|	  ######################/
 # IoT------##############				################	|
 #															|
-										|
+#															|
 
 	# define Interface against Proxy devices	
 	proxy_interface = ListenNetworkInterface(t_name="Proxy_Interface",
@@ -122,7 +111,7 @@ def main():
 		logging,error("{} Unable to set a Percentile greater 100. (-cached_percentile).".format(t_name))
 		sys.exit(1)
 	in_iot_cached_pl = queue.Queue(maxsize=args.queue_size) # maybe define helper function
-	proxy_interface.add_fork(pipeline=in_iot_cached_pl,probability=args.cached_percentile,pos=0)
+	proxy_interface.fork_handler.add_fork(pipeline=in_iot_cached_pl,probability=args.cached_percentile,pos=0)
 
 	# get pipeline for incoming traffic from Proxy to offload
 	if args.offloading_percentile < 0:
@@ -132,13 +121,13 @@ def main():
 		logging,error("{} Unable to set a Percentile greater 100. (-offloading_percentile).".format(t_name))
 		sys.exit(1)
 	in_iot_offloading_pl = queue.Queue(maxsize=args.queue_size) # maybe define helper function
-	proxy_interface.add_fork(pipeline=in_iot_offloading_pl,probability=args.offloading_percentile,pos=0)
+	proxy_interface.fork_handler.add_fork(pipeline=in_iot_offloading_pl,probability=args.offloading_percentile,pos=0)
 	
 	# get pipeline for incoming traffic from Proxy to local compute
-	__,in_iot_local_compute = proxy_interface.get_fork(-1)
+	__,in_iot_local_compute = proxy_interface.fork_handler.get_fork(-1)
 
 	# get pipeline for incoming traffic from Proxy
-	__,in_iot_local_compute = proxy_interface.get_fork(-1)
+	__,in_iot_local_compute = proxy_interface.fork_handler.get_fork(-1)
 
 	# get pipeline for traffic to send to Proxy instances
 	out_proxy_pl = proxy_interface.get_after_work_pipeline()
@@ -151,36 +140,40 @@ def main():
 	cache_process = CacheProcess()
 	for i in range(0,1):
 		w = Worker(
-			in_iot_cached_pl,
-			out_proxy_pl,
-			cache_process)
+			t_name="CacheProcess_Worker",
+			incoming_pipeline=in_iot_cached_pl,
+			outgoing_pipeline=out_proxy_pl,
+			process=cache_process)
 		ELEMENTS.append(w)
 		w.start()
 	
-	offloading_process = ForwardingProcess("OffloadingProcess")
+	offloading_process = ForwardingProcess()
 	for i in range(0,2):
 		w = Worker(
-			in_iot_offloading_pl,
-			out_cloud_pl,
-			offloading_process)
+			t_name="OffloadingProcess_Worker",
+			incoming_pipeline=in_iot_offloading_pl,
+			outgoing_pipeline=out_cloud_pl,
+			process=offloading_process)
 		ELEMENTS.append(w)
 		w.start()
 	
 	local_compute_process = LocalComputeProcess()
 	for i in range(0,3):
 		w = Worker(
-			in_iot_local_compute,
-			out_proxy_pl,
-			local_compute_process)
+			t_name="LocalComputeProcess_Worker",
+			incoming_pipeline=in_iot_local_compute,
+			outgoing_pipeline=out_proxy_pl,
+			process=local_compute_process)
 		ELEMENTS.append(w)
 		w.start()
 
-	forward_offloading_process = ForwardingProcess("ForwardOffloadingProcess")
+	forward_offloading_process = ForwardingProcess()
 	for i in range(0,1):
 		w = Worker(
-			in_iot_local_compute,
-			out_proxy_pl,
-			forward_offloading_process)
+			t_name="ForwardOffloadingProcess_Worker",
+			incoming_pipeline=in_iot_local_compute,
+			outgoing_pipeline=out_proxy_pl,
+			process=forward_offloading_process)
 		ELEMENTS.append(w)
 		w.start()
 
@@ -191,8 +184,8 @@ def main():
 	cloud_interface.start()
 
 	while RUNNING:
-		proxy_interface.clean(timeout=1)
-		cloud_interface.clean(timeout=1)
+		proxy_interface.connection_handler.clean(timeout=1)
+		cloud_interface.connection_handler.clean(timeout=1)
 		time.sleep(args.cleaning_interval)
 
 	proxy_interface.join()
@@ -201,13 +194,13 @@ def main():
 
 class CacheProcess(Process):
 
-	t_name = "CacheProcess"
-
 	def __init__(self):
+		super().__init__()
+		self.t_name = "CacheProcess"
+
 		vm_bytes=1024*2000
 		self.vm = VM(method="zero-one",vm_bytes=vm_bytes)
 		self.children["VM"]=self.vm
-		Process().__init__()
 
 	def execute(self,device_id,request_id):
 		self.vm.utilize_vm()
@@ -215,12 +208,11 @@ class CacheProcess(Process):
 
 class LocalComputeProcess(Process):
 
-	t_name = "LocalComputeProcess"
-
 	def __init__(self):
+		super().__init__()
+		self.t_name = "LocalComputeProcess"
 		self.cpu = CPU(method="nsqrt",max_ops=5)
 		self.children["CPU"]=self.cpu
-		Process().__init__()
 
 	def execute(self,device_id,request_id):
 		self.cpu.utilize_cpu()

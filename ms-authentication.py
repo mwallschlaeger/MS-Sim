@@ -8,23 +8,11 @@ from worker import Worker
 from vm import VM
 from load_balancer import RoundRobinLoadBalancer
 from process import Process
+import helper
 
 RUNNING = True # controls main loop
 ELEMENTS = []
 t_name = "MS-AUTHENTICATE"
-
-
-def configure_logging(debug,filename=None):
-	if filename is None:
-		if debug:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
-	else:
-		if debug:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.DEBUG)
-		else:
-			logging.basicConfig(filename=filename,format='%(asctime)s %(message)s', level=logging.INFO)
 
 def sig_int_handler(signal, frame):
 	# TODO somehow not closing everything properly
@@ -65,9 +53,9 @@ def main():
 
 	if args.log:
 		logfile = args.log
-		configure_logging(debug,logfile)
+		helper.configure_logging(debug,logfile)
 	else:
-		configure_logging(debug)
+		helper.configure_logging(debug)
 		logging.debug("debug mode enabled")
 
 # 1. IoT devices send data to Proxy
@@ -101,7 +89,7 @@ def main():
 					)
 
 	# get pipeline for incoming traffic
-	__,in_proxy_pl = proxy_interface.get_fork(-1)
+	__,in_proxy_pl = proxy_interface.fork_handler.get_fork(-1)
 	
 	# get pipeline for traffic send to proxy
 	out_proxy_pl = proxy_interface.get_after_work_pipeline()
@@ -110,9 +98,10 @@ def main():
 	proxy_to_proxy = ProxyToProxyProcess()
 	for i in range(0,2):
 		w = Worker(
-			in_proxy_pl,
-			out_proxy_pl,
-			proxy_to_proxy)
+			t_name="ProxyToProxyProcess_Worker",
+			incoming_pipeline=in_proxy_pl,
+			outgoing_pipeline=out_proxy_pl,
+			process=proxy_to_proxy)
 		ELEMENTS.append(w)
 		w.start()
 
@@ -121,7 +110,7 @@ def main():
 	proxy_interface.start()
 
 	while RUNNING:
-		proxy_interface.clean(args.cleaning_interval)
+		proxy_interface.connection_handler.clean(args.cleaning_interval)
 		time.sleep(2)
 
 	proxy_interface.join()
@@ -129,13 +118,12 @@ def main():
 
 class ProxyToProxyProcess(Process):
 
-	t_name = "ProxyToProxyProcess"
-
 	def __init__(self):
+		super().__init__()
+		self.t_name = "ProxyToProxyProcess"
 		self.vm = VM(method="walk-0a",vm_bytes=1024*1000) #MB
 		self.conf["authentications"] = 0
 		self.children["VM"] = self.vm
-		Process().__init__()
 
 	def execute(self,device_id,request_id):
 		self.conf["authentications"] += 1
