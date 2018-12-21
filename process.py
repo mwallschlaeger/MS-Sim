@@ -2,10 +2,9 @@ from sim import MSSimObject
 
 class Process(MSSimObject):
 
-	t_name = "AbstractProcess"
-
 	def __init__(self):
-		pass
+		super().__init__()
+		self.t_name = "AbstractProcess"
 
 	def __str__(self):
 		return self.t_name
@@ -16,12 +15,10 @@ class Process(MSSimObject):
 
 class ForwardingProcess(Process):
 
-	t_name = "ForwardingProcess"
-
-	def __init__(self,t_name):
-		self.t_name = t_name
+	def __init__(self):
+		super().__init__()
+		self.t_name = "ForwardingProcess"
 		self.metrics["forwarded_packets"] = 0
-
 
 	def execute(self,device_id,request_id):
 		self.metrics["forwarded_packets"] += 1
