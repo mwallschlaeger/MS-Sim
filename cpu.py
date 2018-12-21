@@ -8,11 +8,13 @@ spec.loader.exec_module(stress_ng)
 
 
 class CPU(MSSimObject):
-	
-	t_name = "CPU_Stress"
+
+
 	''' max_ops = number of loops to run 
 		method = stress-ng cpu method to execute '''
 	def __init__(self,max_ops=3,method=""):
+		super().__init__()
+		self.t_name = "CPU_Stress"
 		self.conf["max_ops"] = max_ops
 		self.conf["method"] = method
 		self.metrics["perfomed_operations"] = 0
