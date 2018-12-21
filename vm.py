@@ -8,19 +8,20 @@ spec.loader.exec_module(stress_ng)
 
 
 class VM(MSSimObject):
+
 	
-	t_name = "VM_Stress"
 	''' utilization = number of loops to run 
 		method = stress-ng cpu method to execute
 	'''
 	def __init__(self,method="",vm_bytes=4096*1000,max_ops=1):
+		super().__init__()
+		self.t_name = "VM_Stress"
 		self.conf["max_ops"] = max_ops
 		self.conf["vm_bytes"] = vm_bytes
 		self.conf["method"] = method
 		self.metrics["executions"] = 0
 		self.metrics["affacted_bytes"] = 0
 		self.metrics["byte_failures"] = 0
-		super().__init__()
 
 	def __str__(self):
 		return "VM" # TODO
