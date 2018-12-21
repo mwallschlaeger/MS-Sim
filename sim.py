@@ -1,14 +1,16 @@
-
+import threading,logging
 
 class MSSimObject():
 
-	t_name = "MS-Sim-Object"
-	conf = {}
-	metrics = {}
-	children = {}
-
 	def __init__(self):
-		pass
+		self.t_name = "MSSimObject"
+		self.conf = {}
+		self.metrics = {}
+		self.const_metrics = {}
+		self.children = {}
+
+	def __str__(self):
+		return self.t_name
 
 	def get_metrics(self):
 		return self.metrics
@@ -22,15 +24,39 @@ class MSSimObject():
 	def get_t_name(self):
 		return self.t_name
 
-	def get_leaf(self):
+	def get_metrics(self,name_value_tuple_list=None):
+		n_v_list = []
+		if name_value_tuple_list is not None:
+			n_v_list = name_value_tuple_list
+
+		for k,v in self.metrics.items():
+			n_v_list.append((self.t_name + "_" + k,v))
+
+		for child,v in self.children.items():
+			for k,v in v.metrics.items():
+				n_v_list.append((child + "_" + k,v))
+		return n_v_list
+
+	def get_leaf(self,reset_metrics=False):
 		leaf = {}
 		leaf["name"] = self.t_name
 		leaf["conf"] = self.conf
 		leaf["metrics"] = self.metrics
-		leaf["children"] =self.children
-		for c in children:
-			leaf["children"][c.get_t_name()] = c.get_leaf()
+		leaf["children"] = {}
+		for k,v in self.children.items():
+			leaf["children"][k] = self.children[k].get_leaf()
+		return leaf
 
-	def __reset_metrics(self):
+	def reset_metrics(self):
 		for k,v in leaf["metrics"].items():
-			v = 0
+			if not v.startswith("const"):
+				v = 0
+
+# TODO: not working yet
+class MSSimThread(threading.Thread,MSSimObject):
+
+	t_name = "MSSimThread"
+
+	def __init__(self):
+		MSSimObject.__init__(self)
+		threading.Thread.__init__(self)
