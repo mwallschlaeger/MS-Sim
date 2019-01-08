@@ -5,3 +5,70 @@ utilize the resources.
 
 Clone:
 git clone --recurse-submodules https://gitlab.tubit.tu-berlin.de/tibut/MS-Sim.git
+
+# version 0.1:
+
+![architecture](/uploads/c0e96ca23e0ec27aafee9f5854a64c9f/architecture.png)
+
+different main classes for all edge-cloud components:
+## ms-load-generator:
+Can spawn a number of "devices"(python3 threads)  constantly sending packets to the back-end system (runs on far edge side)
+
+- parser.add_argument("-proxy",action='append',help="a proxy node to interact with",metavar="example-proxy-host.com",required=True)
+- parser.add_argument("-proxy_port",type=int,default=5090,metavar=5090,help="Port the compute nodes are listening on")
+- parser.add_argument("-devices",type=int,default=500,metavar=500,help="Number of IoTDevices to Simulate")
+- parser.add_argument("-duration",type=int, default=-1,metavar=-1,help="durations in seconds to run (-1 = forever)")
+- parser.add_argument("-min_padding",default=2048,type=int,metavar=2048,help="minimum request padding size (bytes)")
+- parser.add_argument("-max_padding",default=4096,type=int,metavar=4096,help="maximum request padding size (bytes)")
+- parser.add_argument("-interval",default=1.0,type=float,metavar=1.0,help="sending interval")
+
+## ms-proxy: 
+Receives packets from ms-load-generator. Forwards a percentile to authentication service and then to edge-compute. (runs on edge side)
+
+- parser.add_argument("-listen_port",type=int, default=5090,help="Port to listen for incoming messages")
+- parser.add_argument("-authentication",action='append',help="a Compute node to interact with",required=True)
+- parser.add_argument("-authenticate_port",type=int,default=5092,help="Port the compute nodes are listening on")
+- parser.add_argument("-authentication_percentile",type=int,default=10,help="a Compute node to interact with")
+- parser.add_argument("-compute",action='append',help="a Compute node to interact with",required=True)
+- parser.add_argument("-compute_port",type=int,default=5091,help="Port the compute nodes are listening on")
+- parser.add_argument("-optimized",action='store_true',help="run with reduced amount of threads and pipes")
+- parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to proxy")
+- parser.add_argument("-queue_size",type=int,default=5000,help="Size of internal processing queue")
+
+## ms-authentication:
+Authentication service, receives percentile requests from proxy, does some minor operations and responses. (runs in public cloud)
+
+- parser.add_argument("-listen_port",type=int, default=5092,help="Port to listen for incoming messages")
+- parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to authentication")
+- parser.add_argument("-queue_size",type=int,default=5000,help="Size of internal processing queue")
+
+## ms-compute: 
+Edge computing service.  Answers a percentile of request from cache, computes a percentile of the requests locally. The rest will be ffloaded to public cloud. (runs on edge side)
+
+- parser.add_argument("-listen_port",type=int, default=5091,help="Port to listen for incoming messages")
+- parser.add_argument("-cloud_compute",action='append',help="a Cloud-Compute node to interact with",required=True)
+- parser.add_argument("-cloud_compute_port",type=int,default=5093,help="Port the Cloud-Compute nodes are listening on")
+- parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to compute")
+- parser.add_argument("-queue_size",type=int,default=5000,help="Size of interval processing queue")
+- parser.add_argument("-offloading_percentile",type=int,default=50,help="Percentile of request offloaded to central cloud")
+- parser.add_argument("-cached_percentile",type=int,default=20,help="Percentil of request answered from cache to central cloud(calculated after offloading)")
+
+## ms-cloud-compute: 
+Receives requests to large to compute in edge cloud. In some cases cloud-compute requests further information from ms-database. (runs on public cloud)
+
+- parser.add_argument("-listen_port",type=int, default=5093,help="Port to listen for incoming messages")
+- parser.add_argument("-database",action='append',help="a Database node to interact with",required=True)
+- parser.add_argument("-database_port",type=int,default=5094,help="Port the database nodes are listening on")
+- parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to Cloud Compute")
+- parser.add_argument("-queue_size",type=int,default=1000,help="Size of internal processing queue")
+- parser.add_argument("-cached_percentile",type=int,default=20,help="Percentile of request answered from cache")
+- parser.add_argument("-database_request_percentile",type=int,default=50,help="Percentile of requests further request database (calculated after caching)")
+
+## ms-database:
+Database receives requests from cloud-compute service. Supposed to be Memory and HDD intensive. (runs on public cloud)
+
+- parser.add_argument("-listen_port",type=int, default=5094,help="Port to listen for incoming messages")
+- parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to database")
+- parser.add_argument("-queue_size",type=int,default=5000,help="Size of interal processing queue")
+
+Please notice all services are supposed to run several times. Maybe consider running only one instance of database makes more sense from a practical point of view. The version only supports python3 Threads, which means all actions are bound to a single CPU due to python GIL.
