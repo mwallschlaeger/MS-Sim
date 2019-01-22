@@ -1,3 +1,4 @@
 [submodule "stress-ng"]
 	path = stress-ng
 	url = https://github.com/mwallschlaeger/stress-ng.git 
+	branch = master
