@@ -1,4 +1,4 @@
-import queue, time, logging
+import queue, time, logging, copy
 from sim import MSSimObject
 
 class ConnectionHandler(MSSimObject):
@@ -52,7 +52,8 @@ class ConnectionHandler(MSSimObject):
 
 	def get_all_sockets(self):
 		sockets = []
-		for request_id in self.connections.keys():
+		keys = dict(self.connections.keys())
+		for request_id in keys:
 			sockets.append(self.connections[request_id]["socket"])
 		return sockets	
 

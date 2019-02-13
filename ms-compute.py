@@ -41,7 +41,6 @@ def main():
 	parser.add_argument("-offloading_percentile",type=int,default=50,help="Percentil of request offloaded to central cloud")
 	parser.add_argument("-cached_percentile",type=int,default=20,help="Percentil of request answered from cache to central cloud(calculated after offloading)")
 
-
 	# general 
 	parser.add_argument("-cleaning_interval",type=int,default=2,help="interval in which broken connections got cleared",metavar='2')
 
@@ -134,7 +133,6 @@ def main():
 
 	# get pipeline for traffic to send to Cloud instances
 	out_cloud_pl = cloud_interface.get_after_work_pipeline()
-
 
 	# initialize  workers
 	cache_process = CacheProcess()

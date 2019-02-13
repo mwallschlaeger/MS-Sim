@@ -190,7 +190,7 @@ def main():
 	# load generator
 	parser.add_argument("-proxy",action='append',help="a proxy node to interact with",metavar="example-proxy-host.com",required=True)
 	parser.add_argument("-proxy_port",type=int,default=5090,metavar=5090,help="Port the compute nodes are listening on")
-	parser.add_argument("-devices",type=int,default=500,metavar=500,help="Number of IoTDevices to Simulate")
+	parser.add_argument("-devices",type=int,default=500,metavar=50,help="Number of IoTDevices to Simulate")
 
 	parser.add_argument("-duration",type=int, default=-1,metavar=-1,help="durations in seconds to run (-1 = forever)")
 	parser.add_argument("-min_padding",default=2048,type=int,metavar=2048,help="minimum request padding size (bytes)")
