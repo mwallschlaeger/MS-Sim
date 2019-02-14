@@ -56,12 +56,12 @@ class IoTDevice(threading.Thread):
 			try:
 				self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 				self.s.connect(self.load_balancer.get_next_endpoint())
-				self.s.settimeout(2)
+				self.s.settimeout(5)
 			except OSError as os_error:
 				logging.debug("{}: Could not assign request addr, proxy overloaded ...".format(str(self)))
 				time.sleep(self.empty_queue_timeout)
 				continue
-			msg = self.build_msg()
+			msg = self.build_msg(0x35)
 			self.bytes_out += len(msg)
 			self.msg_out+=1
 			try:
@@ -86,7 +86,7 @@ class IoTDevice(threading.Thread):
 				self.wait_to_send()
 				continue
 
-			logging.debug("{}: received msg ...".format(str(self)))
+			logging.debug("{}: received msg {} ...".format(str(self),response_msg))
 			self.msg_in+=1
 			self.bytes_in += len(response_msg)
 			self.wait_to_send()
@@ -95,10 +95,10 @@ class IoTDevice(threading.Thread):
 	def get_padding(self):
 		return self.padding
 
-	def build_msg(self):
+	def build_msg(self,request_type):
 		request_id = random_string(16)
 		padding = self.get_padding()
-		return bytes(self.device_id + request_id + padding,"utf-8")
+		return bytes(self.device_id + request_id + str(request_type) + padding,"utf-8")
 
 	def stop(self):
 		logging.debug("{}: stopping device ...".format(str(self)))

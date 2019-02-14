@@ -9,14 +9,15 @@ class SendNetworkInterface(NetworkInterface):
 				load_balancer,
 				t_name=None,
 				select_timeout=0.1,
-				queque_maxsize=1000,
+				multiprocessing_worker=False,
+				queue_maxsize=1000,
 				put_work_task_timeout=0.05,
 				pull_work_task_timeout=0.05
 				):
 
 		NetworkInterface.__init__(self,
 								t_name=t_name,
-								queque_maxsize=queque_maxsize,
+								queue_maxsize=queue_maxsize,
 								put_work_task_timeout=put_work_task_timeout,
 								pull_work_task_timeout=pull_work_task_timeout
 								)
@@ -40,9 +41,6 @@ class Source(MSSimThread):
 		self.network = network
 
 		self.t_name = t_name + "_Source"
-		self.conf["DEVICE_ID_LEN"] = 12
-		self.conf["REQUEST_ID_LEN"] = 16
-		self.conf["RECV_BYTES"] = 4096
 		self.conf["select_timeout"] = select_timeout
 		self.conf["running"] = True
 		self.metrics["select_timeouts"] = 0
@@ -62,13 +60,17 @@ class Source(MSSimThread):
 										 [],
 										 self.conf["select_timeout"])
 			except ValueError as VE1:
+				logging.debug("{}: overloaded ...".format(self.t_name))
+
 				self.metrics["select_timeouts"] += 1
 				continue
+			except KeyError as KE1:
+				pass # runtime dynamic dict error in connection handlelr
 
 			for sock in read_sockets:
 				# receive and process data
 				try:
-					data = sock.recv(self.conf["RECV_BYTES"])
+					data = sock.recv(self.network.conf["recv_bytes"])
 				except InterruptedError as IE1:
 					logging.debug("{}: could not recv data properly. Closing socket ...".format(self.t_name))
 					#logging.debug("{}".format(str(IE1)))
@@ -80,15 +82,13 @@ class Source(MSSimThread):
 					self.metrics["closed_sockets_by_error"] += 1
 					# BAD FILE DESCRIPTOR
 					sock.close()
-
 				except ConnectionResetError as CRE1:
 					logging.debug("{}: connection reset by peer ...".format(self.t_name))
 					self.metrics["closed_sockets_by_error"] += 1
 					sock.close()
 					continue
-
-				device_id,request_id = self.network.read_msg(data)
-				if device_id is None:
+				packet = self.network.read_msg(data)
+				if packet is None:
 					self.metrics["encoding_error"] += 1
 					self.metrics["closed_sockets_by_error"] += 1
 					logging.debug("{}: could not parse received msg properly ...".format(self.t_name))
@@ -97,8 +97,8 @@ class Source(MSSimThread):
 
 				self.metrics["closed_sockets"] += 1
 				sock.close()
-				self.network.connection_handler.delete_connection(device_id=device_id,request_id=request_id)
-				self.network.put_work_task(device_id,request_id)
+				if self.network.put_work_task(packet):
+					self.network.connection_handler.delete_connection(request_id=packet.header.request_id)
 
 	def stop(self):
 		self.conf["running"] = False
@@ -127,24 +127,28 @@ class Sink(MSSimThread):
 		logging.debug("{}: initialized ...".format(str(self)))
 		while self.conf["running"]:
 			try:
-				device_id, request_id = self.network.pull_work_result()
+				packet = self.network.pull_work_result()
 			except queue.Empty as E1:
 				self.metrics["reading_on_empty_queue"] += 1
 				continue
 
-			msg = self.network.build_msg(device_id,request_id)
+			msg = self.network.build_msg(packet)
 			address = self.load_balancer.get_next_endpoint()
 			if address is None:
 				self.metrics["no_lb_endpoint_error"] += 1
 				logging.debug("{}: No loadbalancer endpoint defined, unable to send messages ...".format(self.t_name))
 				continue
-
 			try:
 				send_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 				send_socket.connect(address)
 			except ConnectionRefusedError as CRE1:
 				self.metrics["connection_timeouts"] += 1
-				logging.debug("{}: connection timeout ...".format(self.t_name()))
+				logging.debug("{}: connection timeout ...".format(self.t_name))
+				send_socket.close()
+				self.network.pull_task_done()
+				continue
+			except socket.gaierror:
+				logging.debug("{}: hostname error ...".format(self.t_name))
 				send_socket.close()
 				self.network.pull_task_done()
 				continue
@@ -157,7 +161,9 @@ class Sink(MSSimThread):
 				logging.warning("{}: sending message failed  ...".format(self.t_name))
 				continue
 
-			self.network.connection_handler.add_connection(socket=send_socket,address=address,device_id=device_id,request_id=request_id)
+			self.network.connection_handler.add_connection(	socket=send_socket,
+															address=address,
+															packet=packet)
 
 	def stop(self):
 		self.conf["running"] = False

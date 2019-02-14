@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# DEPRECATED
 home=`dirname $(readlink -e "$0")`
 
 PROFILE_FILENAME="ms_sim.profile"

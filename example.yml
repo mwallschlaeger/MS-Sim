@@ -1,0 +1,36 @@
+service:
+    # Service wide configurations
+    name: MS-Database
+    multiprocessing: True
+    # listen interface (only one possible)
+    listen:
+      host: 0.0.0.0
+      port: 5094
+      max_clients: 500
+    # define pipleines
+    pipelines:
+      database_querry:
+        processes:
+        - database: 0x34 # predefined naming (database) bind to header action
+        - compute: 0x35 
+        - localcompute: default
+        worker: 1
+        probability: 20
+        output: response 
+      database_request_b:
+        processes:
+        - database: default
+        worker: 1
+        probability: 70
+        output: cloud-compute
+    outputs:
+      cloud-compute:
+        port: 5091
+        hosts:
+          - localhost
+        response: response
+      edge-compute:
+        port: 5092
+        hosts:
+          - localhost
+        response: cloud-compute

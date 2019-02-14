@@ -19,7 +19,6 @@ class CPU(MSSimObject):
 		self.conf["method"] = method
 		self.metrics["perfomed_operations"] = 0
 		self.metrics["failed_operations"] = 0
-		super().__init__()
 
 	def __str__(self):
 		return "CPU" # TODO

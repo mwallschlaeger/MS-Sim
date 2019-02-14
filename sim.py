@@ -1,4 +1,5 @@
 import threading,logging
+import multiprocessing
 
 class MSSimObject():
 
@@ -52,7 +53,6 @@ class MSSimObject():
 			if not v.startswith("const"):
 				v = 0
 
-# TODO: not working yet
 class MSSimThread(threading.Thread,MSSimObject):
 
 	t_name = "MSSimThread"
@@ -60,3 +60,11 @@ class MSSimThread(threading.Thread,MSSimObject):
 	def __init__(self):
 		MSSimObject.__init__(self)
 		threading.Thread.__init__(self)
+
+class MSSimMultiProcessing(multiprocessing.Process,MSSimObject):
+
+	t_name = "MSSimThread"
+
+	def __init__(self):
+		MSSimObject.__init__(self)
+		multiprocessing.Process.__init__(self)

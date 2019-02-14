@@ -12,7 +12,8 @@ class ListenNetworkInterface(NetworkInterface):
 				listen_port=5090,
 				listen_timeout=0.5,
 				maximum_number_of_listen_clients=10000,
-				queque_maxsize=1000,
+				multiprocessing_worker=False,
+				queue_maxsize=1000,
 				put_work_task_timeout=0.05,
 				pull_work_task_timeout=0.05
 				):
@@ -20,7 +21,8 @@ class ListenNetworkInterface(NetworkInterface):
 		MSSimObject.__init__(self)
 		NetworkInterface.__init__(self,
 								t_name=t_name,
-								queque_maxsize=queque_maxsize,
+								multiprocessing_worker=multiprocessing_worker,
+								queue_maxsize=queue_maxsize,
 								put_work_task_timeout=put_work_task_timeout,
 								pull_work_task_timeout=pull_work_task_timeout
 								)
@@ -41,8 +43,13 @@ class ListenNetworkInterface(NetworkInterface):
 
 class Source(MSSimThread):
 
-	def __init__(self, t_name, network, listen_timeout, maximum_number_of_clients=1000, host="localhost", port=5090):
-		#super().__init__()
+	def __init__(self, 
+				t_name, 
+				network, 
+				listen_timeout, 
+				maximum_number_of_clients=1000, 
+				host="localhost", 
+				port=5090):
 
 		super().__init__()
 		self.network = network
@@ -55,9 +62,6 @@ class Source(MSSimThread):
 		self.conf["maximum_number_of_clients"] = maximum_number_of_clients
 		self.conf["listen_timeout"] = listen_timeout
 		self.conf["running"] = True
-		self.conf["DEVICE_ID_LEN"] = 12
-		self.conf["REQUEST_ID_LEN"] = 16
-		self.conf["RECV_BYTES"] = 4096
 		self.metrics["socket_error"] = 0
 		self.metrics["socket_timeout_error"] = 0
 		self.metrics["to_many_open_files_error"] = 0
@@ -83,10 +87,9 @@ class Source(MSSimThread):
 				(acc_socket, address) = self.serversocket.accept()
 			except socket.timeout as T1:
 				self.metrics["socket_error"] += 1
-				if acc_socket is not None:
-					close_socket_by_error(acc_socket)
 				continue
 			except OSError as OS1:
+				logging.debug("{}: Socket closed, OSError ...".format(str(self)))
 				self.metrics["to_many_open_files_error"] += 1
 				self.serversocket.close()
 				self.initialize_socket()
@@ -94,7 +97,7 @@ class Source(MSSimThread):
 				continue
 
 			try:
-				data = acc_socket.recv(self.conf["RECV_BYTES"])
+				data = acc_socket.recv(self.network.conf["recv_bytes"])
 			except InterruptedError as IE1:
 				self.metrics["socket_timeout_error"] += 1
 				logging.debug("{}: Timeout while reading socket ...".format(str(self)))
@@ -102,18 +105,21 @@ class Source(MSSimThread):
 				self.metrics["closed_sockets_by_error"] += 1
 				continue
 			except socket.timeout:
+				logging.debug("{}: Timeout while reading socket ...".format(str(self)))
 				self.metrics["socket_timeout_error"] += 1
 				self.metrics["closed_sockets_by_error"] += 1
 				continue
 
-			device_id,request_id = self.network.read_msg(data)
-			if device_id == None:
+			packet = self.network.read_msg(data)
+			if packet == None:
+				logging.debug("{}: closed socket error ...".format(str(self)))
+
 				self.metrics["closed_sockets_by_error"] += 1
 				acc_socket.close()
 				continue
-
-			self.network.connection_handler.add_connection(acc_socket,address,device_id,request_id)
-			self.network.put_work_task(device_id,request_id)
+				
+			if self.network.put_work_task(packet):
+				self.network.connection_handler.add_connection(acc_socket,address,packet)
 
 	def stop(self):
 		logging.info("{}: stopping ...".format(self.t_name))
@@ -122,11 +128,8 @@ class Source(MSSimThread):
 ''' sending packets to other hosts '''
 class Sink(MSSimThread):
 	def __init__(self, t_name, network):
-
 		super().__init__()
-
 		self.network = network
-
 		self.t_name = t_name + "_Sink"
 		self.conf["running"] = True
 		self.metrics["reading_on_empty_queue"] = 0
@@ -140,24 +143,25 @@ class Sink(MSSimThread):
 		logging.info("{}: initialized ...".format(self.t_name))
 		while(self.conf["running"]):
 			try:
-				device_id, request_id = self.network.pull_work_result()
+				packet = self.network.pull_work_result()
 			except queue.Empty as E1:
 				self.metrics["reading_on_empty_queue"] += 1
 				continue
+
 			try:
-				response_socket = self.network.connection_handler.get_next_connection_socket(device_id,request_id)
+				response_socket = self.network.connection_handler.get_next_connection_socket(packet)
 			except KeyError as KE1:
 				self.metrics["connection_list_error"] = +1
 				logging.debug("{}: Could not find socket in connection history ...".format(self.t_name))
 				continue
 
-			self.network.connection_handler.delete_connection(device_id,request_id)
-			msg = self.network.build_msg(device_id,request_id)
-
+			self.network.connection_handler.delete_connection(packet)
+			msg = self.network.build_msg(packet)
+			
 			try:
 				response_socket.send(msg)
-			except:
-				logging.debug("{}: sending Message to {} failed, closing connection ...".format(self.t_name,address))
+			except Exception as FT:
+				logging.debug("{}: sending Message failed, connection already closed ...".format(self.t_name))
 				self.metrics["closed_sockets_by_error"] += 1
 				response_socket.close()
 			

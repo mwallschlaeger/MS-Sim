@@ -3,11 +3,9 @@
 import argparse, time, logging, queue, sys, random, threading, signal, os
 from listen_network_interface import ListenNetworkInterface
 from send_network_interface import SendNetworkInterface
-from process import Process, ForwardingProcess
-from worker import Worker
 from vm import VM
 from load_balancer import RoundRobinLoadBalancer
-from process import Process
+from process import *
 import helper
 
 RUNNING = True # controls main loop
@@ -15,7 +13,6 @@ ELEMENTS = []
 t_name = "MS-AUTHENTICATE"
 
 def sig_int_handler(signal, frame):
-	# TODO somehow not closing everything properly
 
 	global RUNNING
 	global ELEMENTS
@@ -40,9 +37,11 @@ def main():
 
 	# general 
 	parser.add_argument("-cleaning_interval",type=int,default=2,help="interval in which broken connections got cleared")
+	parser.add_argument("-multiprocessing_worker",action='store_true',help="enables multiprocessing to improve performance")
 
 	# logging
-	parser.add_argument("-log",help="Redirect logs to a given file in addition to the console.",metavar='')
+	parser.add_argument("-log",help="Redirect service quality data to a given file.",metavar='')
+	parser.add_argument("-status_log",help="Redirect logs to a given file in addition to the console.",metavar='')
 	parser.add_argument("-v",action='store_true',help="Enable verbose logging Sink")
 	args = parser.parse_args()
 
@@ -51,8 +50,8 @@ def main():
 	if args.v:
 		debug = True
 
-	if args.log:
-		logfile = args.log
+	if args.status_log:
+		logfile = args.status_log
 		helper.configure_logging(debug,logfile)
 	else:
 		helper.configure_logging(debug)
@@ -85,23 +84,29 @@ def main():
 					listen_host="0.0.0.0",
 					listen_port=args.listen_port,
 					maximum_number_of_listen_clients=args.max_clients,
-					queque_maxsize=args.queue_size
+					multiprocessing_worker=args.multiprocessing_worker,
+					queue_maxsize=args.queue_size
 					)
-
-	# get pipeline for incoming traffic
-	__,in_proxy_pl = proxy_interface.fork_handler.get_fork(-1)
 	
 	# get pipeline for traffic send to proxy
-	out_proxy_pl = proxy_interface.get_after_work_pipeline()
+	out_proxy_pl = proxy_interface.get_send_pipeline()
+	
+	# get pipeline to worker
+	in_proxy_pl = helper.get_queue(multiprocessing_worker=args.multiprocessing_worker,maxsize=args.queue_size)
+
+	# set default workergroup
+	proxy_interface.fork_handler.add_fork(pipeline=in_proxy_pl,probability=100)
 	
 	# initialize all workers
-	proxy_to_proxy = ProxyToProxyProcess()
+	p = Authentication()
+	#p = MemoryCacheOperation()
 	for i in range(0,2):
-		w = Worker(
+		w = helper.spawn_worker(
 			t_name="ProxyToProxyProcess_Worker",
 			incoming_pipeline=in_proxy_pl,
 			outgoing_pipeline=out_proxy_pl,
-			process=proxy_to_proxy)
+			default_process=p,
+			multiprocessing_worker=args.multiprocessing_worker)
 		ELEMENTS.append(w)
 		w.start()
 
@@ -109,25 +114,23 @@ def main():
 	ELEMENTS.append(proxy_interface)
 	proxy_interface.start()
 
+	file_obj = None
+	if args.log:
+		pass
+		#file_obj = open(args.log,"w")
+	#helper.log_metrics([proxy_interface,p],print_header=True,file_obj=file_obj)
 	while RUNNING:
 		proxy_interface.connection_handler.clean(args.cleaning_interval)
-		time.sleep(2)
+		#helper.log_metrics([proxy_interface,p],file_obj=file_obj)
+		time.sleep(args.cleaning_interval)
 
+	if args.log:
+		pass
+		#file_obj.close()
+	for e in ELEMENTS:
+		e.stop()
 	proxy_interface.join()
 	sys.exit(0)
-
-class ProxyToProxyProcess(Process):
-
-	def __init__(self):
-		super().__init__()
-		self.t_name = "ProxyToProxyProcess"
-		self.vm = VM(method="walk-0a",vm_bytes=1024*1000) #MB
-		self.conf["authentications"] = 0
-		self.children["VM"] = self.vm
-
-	def execute(self,device_id,request_id):
-		self.conf["authentications"] += 1
-		self.vm.utilize_vm() 
 
 if __name__ == '__main__':
 	main()
