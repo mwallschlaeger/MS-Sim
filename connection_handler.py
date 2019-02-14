@@ -52,7 +52,7 @@ class ConnectionHandler(MSSimObject):
 
 	def get_all_sockets(self):
 		sockets = []
-		keys = dict(self.connections.keys())
+		keys = list(self.connections.keys())
 		for request_id in keys:
 			sockets.append(self.connections[request_id]["socket"])
 		return sockets	
