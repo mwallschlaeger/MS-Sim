@@ -3,3 +3,4 @@ archive/
 *.log
 profile/
 stress-ng/
+*.png
