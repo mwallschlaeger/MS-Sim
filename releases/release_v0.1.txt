@@ -1,16 +1,9 @@
-Microservice Simulation
+# version 0.1:
 
-ms-sim is a toolbox designed to build artificial microservices. Each microservice can be connected to others and utilizes a different set of resources. Python3 bindings for Stress-ng were called to 
-utilize the resources.
-
-Clone:
-git clone --recurse-submodules https://gitlab.tubit.tu-berlin.de/tibut/MS-Sim.git
-
-Example edge use-case scenario
+![architecture](/uploads/c0e96ca23e0ec27aafee9f5854a64c9f/architecture.png)
 
 different main classes for all edge-cloud components:
-
-ms-load-generator:
+## ms-load-generator:
 Can spawn a number of "devices"(python3 threads)  constantly sending packets to the back-end system (runs on far edge side)
 
 - parser.add_argument("-proxy",action='append',help="a proxy node to interact with",metavar="example-proxy-host.com",required=True)
@@ -21,7 +14,7 @@ Can spawn a number of "devices"(python3 threads)  constantly sending packets to 
 - parser.add_argument("-max_padding",default=4096,type=int,metavar=4096,help="maximum request padding size (bytes)")
 - parser.add_argument("-interval",default=1.0,type=float,metavar=1.0,help="sending interval")
 
-ms-proxy: 
+## ms-proxy: 
 Receives packets from ms-load-generator. Forwards a percentile to authentication service and then to edge-compute. (runs on edge side)
 
 - parser.add_argument("-listen_port",type=int, default=5090,help="Port to listen for incoming messages")
@@ -34,14 +27,14 @@ Receives packets from ms-load-generator. Forwards a percentile to authentication
 - parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to proxy")
 - parser.add_argument("-queue_size",type=int,default=5000,help="Size of internal processing queue")
 
-ms-authentication:
+## ms-authentication:
 Authentication service, receives percentile requests from proxy, does some minor operations and responses. (runs in public cloud)
 
 - parser.add_argument("-listen_port",type=int, default=5092,help="Port to listen for incoming messages")
 - parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to authentication")
 - parser.add_argument("-queue_size",type=int,default=5000,help="Size of internal processing queue")
 
-ms-compute: 
+## ms-compute: 
 Edge computing service.  Answers a percentile of request from cache, computes a percentile of the requests locally. The rest will be ffloaded to public cloud. (runs on edge side)
 
 - parser.add_argument("-listen_port",type=int, default=5091,help="Port to listen for incoming messages")
@@ -52,7 +45,7 @@ Edge computing service.  Answers a percentile of request from cache, computes a 
 - parser.add_argument("-offloading_percentile",type=int,default=50,help="Percentile of request offloaded to central cloud")
 - parser.add_argument("-cached_percentile",type=int,default=20,help="Percentil of request answered from cache to central cloud(calculated after offloading)")
 
-ms-cloud-compute: 
+## ms-cloud-compute: 
 Receives requests to large to compute in edge cloud. In some cases cloud-compute requests further information from ms-database. (runs on public cloud)
 
 - parser.add_argument("-listen_port",type=int, default=5093,help="Port to listen for incoming messages")
@@ -63,7 +56,7 @@ Receives requests to large to compute in edge cloud. In some cases cloud-compute
 - parser.add_argument("-cached_percentile",type=int,default=20,help="Percentile of request answered from cache")
 - parser.add_argument("-database_request_percentile",type=int,default=50,help="Percentile of requests further request database (calculated after caching)")
 
-ms-database:
+## ms-database:
 Database receives requests from cloud-compute service. Supposed to be Memory and HDD intensive. (runs on public cloud)
 
 - parser.add_argument("-listen_port",type=int, default=5094,help="Port to listen for incoming messages")

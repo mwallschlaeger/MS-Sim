@@ -119,5 +119,3 @@ class LocalCompute(Process):
 
 	def execute(self,packet):
 		self.cpu.utilize_cpu()
-
-#print(get_process_list())

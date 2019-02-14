@@ -63,29 +63,6 @@ def main():
 		helper.configure_logging(debug)
 		logging.debug("debug mode enabled")
 
-# 1. IoT devices send data to Proxy
-# (2. Proxy asks Authenticate for authentification) only some %
-# 3. Proxy forwards request to Compute
-# 4. a. Compute offloads into Cloud
-#    b. Compute computes locally 
-#    c. Compute answers with cached data 
-#
-#		|					*EDGE_CLOUD *					|				* PUBLIC CLOUD *
-#		|					*************					|				****************
-#		|		   	   #####################				|
-#		|		  	  /# 5092 AUTHENTICATE #				|4.a  ######################\
-# IoT--	|			2/ #####################			  --------# 5093 Cloud Compute # \
-#     |	|			/									 /	|	  ######################  \
-# IoT------##############				################/	|4.a  ######################   \#################
-#	  1 |  # 5090 PROXY #---------------# 5091 Compute #----------# 5093 Cloud Compute #----# 5094 Database #
-# IoT------##############   \   3   /	################\	|	  ######################   /#################
-#		|		   		 	 -------				     \	|4.a  ######################  /
-# IoT------##############   /  3    \	################  --------# 5093 Cloud Compute # /		
-#	  1 |  # 5090 PROXY #---------------# 5091 COMPUTE #	|	  ######################/
-# IoT------##############				################	|
-#															|
-#															|
-
 	# define Interface against Proxy devices	
 	proxy_interface = ListenNetworkInterface(t_name="Proxy_Interface",
 					listen_host="0.0.0.0",
