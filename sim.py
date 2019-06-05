@@ -1,4 +1,5 @@
-import threading,logging
+import threading
+import logging
 import multiprocessing
 
 class MSSimObject():

@@ -21,7 +21,6 @@ class ThreadWorker(MSSimThread):
 		self.incoming_pipeline = incoming_pipeline
 		self.outgoing_pipeline = outgoing_pipeline
 		self.t_name = t_name
-		#self.children["process"] = self.process
 		self.conf["processes_with_type"] = [] # tuple list (process,type)
 		self.conf["default_process"] = default_process
 		self.conf["min_random_wait_to_read"] = min_random_wait_to_read

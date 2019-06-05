@@ -1,6 +1,15 @@
-import logging, os, sys, pprint, queue, multiprocessing
-from thread_worker import ThreadWorker
-from multiprocessing_worker import MultiprocessingWorker
+import logging
+import os
+import sys
+import pprint
+import queue
+import multiprocessing
+
+from utilization.thread_worker import ThreadWorker
+from utilization.multiprocessing_worker import MultiprocessingWorker
+
+TCP_NETWORK_PROTOCOL ="TCP"
+AVAILABLE_NETWORK_TYPES = [TCP_NETWORK_PROTOCOL]
 
 def configure_logging(debug,filename=None):
 	if filename is None:

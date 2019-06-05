@@ -1,6 +1,6 @@
 from sim import MSSimObject
-from cpu import *
-from vm import *
+from utilization.cpu import *
+from utilization.vm import *
 
 def get_process_by_name(process_name):
 	for subprocess in Process.subclasses:

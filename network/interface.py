@@ -1,9 +1,11 @@
-import queue,logging, datetime, multiprocessing
+import queue
+import logging
+import datetime
+import multiprocessing
 
-from connection_handler import ConnectionHandler
-from fork_handler import ForkHandler
+from network.fork_handler import ForkHandler
 from sim import MSSimObject
-from packet import MSSimPacket,MSSimHeader
+from network.packet import MSSimPacket,MSSimHeader
 import helper
 
 class NetworkInterface(MSSimObject):
@@ -19,8 +21,7 @@ class NetworkInterface(MSSimObject):
 
 		# configure ForkHandler
 		self.fork_handler = ForkHandler()
-
-		self.connection_handler = ConnectionHandler()
+		self.connections = {}
 
 		if t_name is None:
 			t_name = str(random.getrandbits(16))
@@ -28,47 +29,29 @@ class NetworkInterface(MSSimObject):
 			self.t_name = t_name
 
 		self.children["ForkHandler"] = self.fork_handler
-		self.children["connection_handler"] = self.connection_handler
 		self.conf["put_work_task_timeout"] = put_work_task_timeout
-		self.conf["pull_work_task_timeout"] = pull_work_task_timeout
+		#self.conf["pull_work_task_timeout"] = pull_work_task_timeout
 		self.conf["multiprocessing_worker"] = multiprocessing_worker
 		self.conf["queue_maxsize"] = queue_maxsize
-		self.conf["recv_bytes"] = 4096
+		self.conf["recv_bytes"] = 409622
 		self.metrics["encoding_error"] = 0
 		self.metrics["full_queue_error"] = 0
 		self.metrics["put_to_pipeline"] = 0
 		self.metrics["pulled_from_pipeline"] = 0
 		self.metrics["const_start_time"] = None
 		self.metrics["const_stop_time"] = None
-
-		self.send_pipeline = helper.get_queue(multiprocessing_worker=self.conf["multiprocessing_worker"],maxsize=self.conf["queue_maxsize"])
-
-		# set default entry
+		self.send_pipeline = helper.get_queue(	multiprocessing_worker=self.conf["multiprocessing_worker"],
+												maxsize=self.conf["queue_maxsize"])
 
 	def __str__(self):
 		return "Network_{}".format(self.t_name)
 
-	def build_msg(self,packet):
-		try:
-			msg = packet.get_message()
-		except:
-			self.metrics["encoding_error"] += 1
-			logging.warning("{}: wrong encoding. msg: {} ...".format(self.t_name,msg))
-			return None
-		return msg
-
-	def read_msg(self,data):
-		try:
-			packet = MSSimPacket(data)
-			return packet
-		except:
-			self.metrics["encoding_error"] += 1
-			return None
+	def add_forward_pl(self,pl):
+		self.fork_handler.add_fork(pl,100)
 
 	def start(self):
 		self.metrics["const_start_time"] = str(datetime.datetime.now())
 		logging.debug("{}: starting ...".format(self.t_name))
-
 		self.source.start()
 		self.sink.start()
 
@@ -79,7 +62,6 @@ class NetworkInterface(MSSimObject):
 		self.sink.stop()
 
 	def join(self):
-
 		self.sink.join()
 		self.source.join()
 
@@ -104,7 +86,7 @@ class NetworkInterface(MSSimObject):
 
 	def pull_work_result(self):
 		self.metrics["pulled_from_pipeline"] += 1
-		packet = self.send_pipeline.get(timeout=self.conf["pull_work_task_timeout"])
+		packet = self.send_pipeline.get()
 		return packet
 
 	def pull_task_done(self):

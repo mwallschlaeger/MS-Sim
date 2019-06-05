@@ -1,92 +1,27 @@
-Microservice Simulation
+#Microservice Simulation
 
-ms-sim is a toolbox designed to build artificial microservices. Each microservice can be connected to others and utilizes a different set of resources. Python3 bindings for Stress-ng were called to 
-utilize the resources.
+ms-sim is a toolbox designed to build simulated microservices running on real hardware. MS-Sim services utilize real system resources and rely on an underlying physical or virtual network. 
+
+##How to Start:
 
 Clone:
 git clone --recurse-submodules https://gitlab.tubit.tu-berlin.de/tibut/MS-Sim.git
 
-Example edge use-case scenario
+### Start Example Services:
 
+Start example Compute Service (Noops) 
+```
+./ms-yaml-build.py -y yaml-definitions/test-compute.yaml -p
+```
 
+Start example proxy (Forwarder)
+The proxy forwards received packets to compute and from compute service back to the requester
+```
+./ms-yaml-build.py -y yaml-definitions/test-proxy.yaml
+```
 
-## ms-load-generator:
-The load-generator spawns several IoT devices, set via -devices, which continuously send request packets to the edge side. The size and the time between two requests are configurable. After sending a request, the IoT-devices wait for a response. If in a certain amount of time no response is received, the error counter get increase. The ms-load-generator reports, how many packets are sent/received, how many errors occurred, and statistics about bytes in/out.
-- parser.add_argument("-proxy",action='append',help="a proxy node to interact with",metavar="example-proxy-host.com",required=True)
-- parser.add_argument("-proxy_port",type=int,default=5090,metavar=5090,help="Port the compute nodes are listening on")
-- parser.add_argument("-devices",type=int,default=500,metavar=500,help="Number of IoTDevices to Simulate")
-- parser.add_argument("-duration",type=int, default=-1,metavar=-1,help="durations in seconds to run (-1 = forever)")
-- parser.add_argument("-min_padding",default=2048,type=int,metavar=2048,help="minimum request padding size (bytes)")
-- parser.add_argument("-max_padding",default=4096,type=int,metavar=4096,help="maximum request padding size (bytes)")
-- parser.add_argument("-interval",default=1.0,type=float,metavar=1.0,help="sending interval")
-
-## ms-proxy: 
-The ms-proxy service receives packets from the ms-load-generator. The proxy nodes are the entry points to the microservice backend. It distributes the IoT-devices requests onto the compute nodes. Ms-proxy forwards a percentile of the received request to authentication service. After authentication requests are forwarded towards an edge-compute instance. Requests not sent to the authentication service are directly forwarded to an edge compute instance.- parser.add_argument("-listen_port",type=int, default=5090,help="Port to listen for incoming messages")
-
-- parser.add_argument("-authentication",action='append',help="a Compute node to interact with",required=True)
-- parser.add_argument("-authentication_port",type=int,default=5092,help="Port the compute nodes are listening on")
-- parser.add_argument("-authentication_percentile",type=int,default=10,help="a Compute node to interact with")
-- parser.add_argument("-compute",action='append',help="a Compute node to interact with",required=True)
-- parser.add_argument("-compute_port",type=int,default=5091,help="Port the compute nodes are listening on")
-- parser.add_argument("-optimized",action='store_true',help="run with reduced amount of threads and pipes")
-- parser.add_argument("-queue_size",type=int,default=5000,help="Size of interal processing queue")
-- parser.add_argument("-cleaning_interval",type=int,default=2,help="interval in which broken connections got cleared",metavar='2')
-- parser.add_argument("-log",help="Redirect service quality data to a given file.",metavar='')
-- parser.add_argument("-status_log",help="Redirect logs to a given file in addition to the console.",metavar='')
-- parser.add_argument("-v",action='store_true',help="Enable verbose logging Sink")
-
-## ms-authentication:
-Ms-authentication simulates an authentication service like Kerberos. The authentication service receives a percentile of the requests from proxy nodes. Those requests trigger a minor utilization action on CPU, memory and HDD and afterwards response to a proxy node.
-
-- parser.add_argument("-listen_port",type=int, default=5092,help="Port to listen for incoming messages")
-- parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to authentication")
-- parser.add_argument("-queue_size",type=int,default=5000,help="Size of interal processing queue")
-- parser.add_argument("-cleaning_interval",type=int,default=2,help="interval in which broken connections got cleared")
-- parser.add_argument("-multiprocessing_worker",action='store_true',help="enables multiprocessing to improve performance")
-- parser.add_argument("-log",help="Redirect service quality data to a given file.",metavar='')
-- parser.add_argument("-status_log",help="Redirect logs to a given file in addition to the console.",metavar='')
-- parser.add_argument("-v",action='store_true',help="Enable verbose logging Sink")
-
-## ms-compute: 
-Represents a computing service. For example, an instance running a machine learning model or video processing. A ms-compute instance   answers a percentile of requests from cache, computes a percentile of the request locally or offloads the request to the public cloud.
-
-- parser.add_argument("-listen_port",type=int, default=5091,help="Port to listen for incoming messages")
-- parser.add_argument("-cloud_compute",action='append',help="a Cloud-Compute node to interact with",required=True)
-- parser.add_argument("-cloud_compute_port",type=int,default=5093,help="Port the Cloud-Compute nodes are listening on")
-- parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to compute")
-- parser.add_argument("-queue_size",type=int,default=5000,help="Size of interal processing queue")
-- parser.add_argument("-offloading_percentile",type=int,default=50,help="Percentil of request offloaded to central cloud")
-- parser.add_argument("-cached_percentile",type=int,default=20,help="Percentil of request answered from cache to central cloud(calculated after offloading)")
-- parser.add_argument("-cleaning_interval",type=int,default=2,help="interval in which broken connections got cleared",metavar='2')
-- parser.add_argument("-multiprocessing_worker",action='store_true',help="enables multiprocessing to improve performance")
-- parser.add_argument("-log",help="Redirect service quality data to a given file.",metavar='')
-- parser.add_argument("-status_log",help="Redirect logs to a given file in addition to the console.",metavar='')
-- parser.add_argument("-v",action='store_true',help="Enable verbose logging Sink")
-
-## ms-cloud-compute: 
-Receives requests, which too large to compute in edge cloud. In some cases, cloud-compute requests further information from ms-database. Ms-cloud-compute implements a high CPU utilization in combination with average Memory R/W. Also, a percentile of the requests can be answered from ms-cloud-compute cache, which is a minor Memory read utilization.
-
-- parser.add_argument("-listen_port",type=int, default=5093,help="Port to listen for incoming messages")
-- parser.add_argument("-database",action='append',help="a Database node to interact with",required=True)
-- parser.add_argument("-database_port",type=int,default=5094,help="Port the database nodes are listening on")
-- parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to Cloud Compute")
-- parser.add_argument("-queue_size",type=int,default=1000,help="Size of interal processing queue")
-- parser.add_argument("-cached_percentile",type=int,default=20,help="Percentile of request answered from cache")
-- parser.add_argument("-database_request_percentile",type=int,default=50,help="Percentile of requests further request database (calculated after caching)")
-- parser.add_argument("-cleaning_interval",type=int,default=2,help="interval in which broken connections got cleared",metavar='2')
-- parser.add_argument("-multiprocessing_worker",action='store_true',help="enables multiprocessing to improve performance")
-- parser.add_argument("-log",help="Redirect service quality data to a given file.",metavar='')
-- parser.add_argument("-status_log",help="Redirect logs to a given file in addition to the console.",metavar='')
-- parser.add_argument("-v",action='store_true',help="Enable verbose logging Sink")
-
-## ms-database:
-Database receives requests from cloud-compute service. The implemented process utilizes the Memory and HDD intensive.
- 
-- parser.add_argument("-listen_port",type=int, default=5094,help="Port to listen for incoming messages")
-- parser.add_argument("-max_clients",type=int,default=5000,help="maximum number of clients connected to database")
-- parser.add_argument("-queue_size",type=int,default=5000,help="Size of interal processing queue")
-- parser.add_argument("-cleaning_interval",type=int,default=2,help="interval in which broken connections got cleared")
-- parser.add_argument("-multiprocessing_worker",default=False,action='store_true',help="enables multiprocessing to improve performance")
-- parser.add_argument("-log",help="Redirect service quality data to a given file.",metavar='')
-- parser.add_argument("-status_log",help="Redirect logs to a given file in addition to the console.",metavar='')
-- parser.add_argument("-v",action='store_true',help="Enable verbose logging Sink")
+### Packet Generator:
+Packet generator simulates IoT devices sending data to the proxy service
+``` 
+./ms-device-simulator.py -devices 500 -host localhost:5090
+```
