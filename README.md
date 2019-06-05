@@ -4,7 +4,7 @@ ms-sim is a toolbox designed to build simulated microservices running on real ha
 
 ## MS-Sim Component Diagram
 
-![alt text](https://raw.githubusercontent.com/mwallschlaeger/MS-Sim/master/docs/MS-SIM-single-service-diagram.pn)
+![alt text](https://raw.githubusercontent.com/mwallschlaeger/MS-Sim/master/docs/MS-SIM-single-service-diagram.png)
 
 This diagram describes the components and features of MS-Sim.
 You can combine those features using the yaml definition language. Examples can be found in the yaml-definitions folder.
