@@ -1,22 +1,43 @@
 #!/usr/bin/env python
 
-import argparse, yaml, signal, sys, os, logging
+import argparse
+import yaml
+import signal
+import sys
+import os
+import logging
 from pprint import pprint, pformat
-import process
+
+import utilization.process
 import helper
 
 RUNNING = True # controls main loop
 ELEMENTS = []
 
+OUTPUT_RESPONSE = "response"
+
+#SERVICE
+DEFAULT_MULTIPROCESSING_WORKERS = True
+DEFAULT_QUEUE_MAXSIZE = 500
+DEFAULT_NETWORK_TYPE = TCP_NETWORK
+# LISTEN
+DEFAULT_MAX_LISTEN_CLIENTS = 500
+# PIPELINE
+DEFAULT_NUM_WORKERS = 1
+
+
+
+
+
 SERVICE_DICT = {
 			"name":{
-				"default":"MS-Database",
+				"default":"MS-Sim-Service",
 				"required":True,
 				"description":"Service Name",
 				"type":str
 				},
 			"multiprocessing":{
-				"default":True,
+				"default":DEFAULT_MULTIPROCESSING_WORKERS,
 				"required":False,
 				"description":"enables Multiprocessing Workers, uses more than one CPU core (True|False)",
 				"type":bool
@@ -40,7 +61,7 @@ SERVICE_DICT = {
 				"type":dict
 				},
 			"queue_maxsize":{
-				"default":500,
+				"default":DEFAULT_QUEUE_MAXSIZE,
 				"required":False,
 				"description":"Maximum number of requests in queue to process",
 				"type":int
@@ -60,14 +81,20 @@ LISTEN_DICT = {
 				"description":"Port to listen on",
 				"type":int
 				},
+			"network_type":{
+				"default":DEFAULT_NETWORK_TYPE,
+				"required":False,
+				"description":"Used network protocol, currently supports: [raw_tcp]",
+				"type":str
+				},
 			"max_clients":{
-				"default":500,
+				"default":DEFAULT_MAX_LISTEN_CLIENTS,
 				"required":False,
 				"description":"Number of maximum clients allowed to connect at a time",
 				"type":int
 				},
 			"queue_maxsize":{
-				"default":SERVICE_DICT["queue_maxsize"]["default"],
+				"default":DEFAULT_QUEUE_MAXSIZE,
 				"required":False,
 				"description":"Maximum number of requests in queue to process",
 				"type":int
@@ -76,7 +103,7 @@ LISTEN_DICT = {
 
 PIPELINE_DICT = {
 			"worker":{
-				"default":"1",
+				"default":DEFAULT_NUM_WORKERS,
 				"required":False,
 				"description":"Number of workers or threads spawned for this Pipeline",
 				"type":int
@@ -94,7 +121,7 @@ PIPELINE_DICT = {
 				"type":int
 				},
 		    "output":{
-		    	"default":"response",
+		    	"default": OUTPUT_RESPONSE,
 				"required":True,
 				"description":"output of pipeline. response || name of output",
 				"type":str
@@ -114,14 +141,20 @@ OUTPUT_DICT = {
 				"description":"Port of hosts to send to",
 				"type":int
 				},
+			"network_type":{
+				"default":DEFAULT_NETWORK_TYPE,
+				"required":False,
+				"description":"Used network protocol, currently supports: [raw_tcp]",
+				"type":str
+				},
 			"response":{
-				"default":"response",
+				"default": OUTPUT_RESPONSE,
 				"required":False,
 				"description":"how to handle responses to a send request ( response || ouput)",
 				"type":str
 				},
 			"queue_maxsize":{
-				"default":SERVICE_DICT["queue_maxsize"]["default"],
+				"default":DEFAULT_QUEUE_MAXSIZE,
 				"required":False,
 				"description":"Maximum number of requests in queue to process",
 				"type":int
@@ -193,7 +226,6 @@ def parse_yaml(yaml_object):
 		exit_err(["Missing \"listen\" entry at service leaf of the yaml file"])
 	l_dict = parse_leaf(leaf=listen,leaf_name="listen",p_dict=LISTEN_DICT)
 	logging.debug("Listen:\n "+pformat(l_dict,indent=1,depth=8,width=160))
-
 	#OUTPUT
 	o_dict = {}
 	if "outputs" in s_dict:
@@ -201,7 +233,6 @@ def parse_yaml(yaml_object):
 		for k,v in outputs.items():
 			o_dict[k] = parse_leaf(leaf=v,leaf_name="outputs",p_dict=OUTPUT_DICT)
 			logging.debug("Output ({}):\n ".format(k)+pformat(o_dict[k],indent=1,depth=8,width=160))
-
 	# PIPELINES
 	p_dict = {}
 	if "pipelines" in s_dict:
@@ -210,40 +241,75 @@ def parse_yaml(yaml_object):
 		exit_err(["Missing \"pipelines\" entry at service leaf of the yaml file"])
 	for k,v in pipelines.items():
 		p_dict[k] = parse_leaf(leaf=v,leaf_name="pipeline",p_dict=PIPELINE_DICT)
-	
-		# check crosswise dependencies
-		if v["output"] == "response":
-			pass
-		elif v["output"] not in  o_dict.keys():
-				exit_err(["undefinded Output ({}) in pipeline {} ...".format(v["output"],k)])	
-		logging.debug("Pipeline ({}):\n ".format(k)+pformat(p_dict[k],indent=1,depth=8,width=160))
-
 	return s_dict,l_dict,p_dict,o_dict
+
+def check_cross_references(service_dict,listen_dict,pipeline_dict,output_dict):
+	for k,v in pipeline_dict.items():	
+		if v["output"] == OUTPUT_RESPONSE:
+			pass
+		elif v["output"] not in output_dict.keys():
+				exit_err(["undefinded Output ({}) in pipeline {} ...".format(v["output"],k)])	
+		logging.debug("Pipeline ({}):\n ".format(k)+pformat(pipeline_dict[k],indent=1,depth=8,width=160))
+
+	# check if output response exists
+	output_names = list(output_dict.keys())
+	pipeline_names = list(pipeline_dict.keys())
+	for output_name, v in output_dict.items():
+		if v["response"] in (output_names + pipeline_names) or v["response"] == OUTPUT_RESPONSE:
+			pass
+		else:
+			exit_err(["undefinded response ({}) in output {} ...".format(v["response"],output_name)])	
+
+
+def build_listen_interface(name,host,port,network_type,max_clients,queue_maxsize):
+	if network_type not in helper.AVAILABLE_NETWORK_TYPES:
+		raise NotSupportedError("Network type: {} not supported ...".format("network_type"))
+	
+	if network_type == helper.TCP_NETWORK_PROTOCOL:
+		from network.raw_tcp.tcp_listen_interface import ListenNetworkInterface
+		listen_interface = ListenNetworkInterface(
+			t_name=name+"_interface",
+			listen_host=host,
+			listen_port=port,
+			maximum_number_of_listen_clients=max_clients,
+			queue_maxsize=queue_maxsize)
+	return listen_interface
+
+def build_output_interface(name,peer_list,network_type,multiprocessing,queue_maxsize):
+	if network_type not in helper.AVAILABLE_NETWORK_TYPES:
+		raise NotSupportedError("Network type: {} not supported ...".format("network_type"))
+	
+	from network.load_balancer import RoundRobinLoadBalancer
+	if network_type == helper.TCP_NETWORK_PROTOCOL:
+		from network.raw_tcp.tcp_send_interface import SendNetworkInterface
+		load_balancer = RoundRobinLoadBalancer(host_list=peer_list)
+		output_interface = SendNetworkInterface(t_name=name+"_Interface",
+											load_balancer=load_balancer,
+											multiprocessing_worker=multiprocessing,
+											queue_maxsize=queue_maxsize)
+	return output_interface
+
 
 def build_structure(service_dict,listen_dict,pipeline_dict,output_dict):
 	global ELEMENTS
-	# build listen interface
-	from listen_network_interface import ListenNetworkInterface
-	listen_dict["instance"] = ListenNetworkInterface(
-			t_name=service_dict["name"]+"_interface",
-			listen_host=listen_dict["host"],
-			listen_port=listen_dict["port"],
-			maximum_number_of_listen_clients=listen_dict["max_clients"],
-			queue_maxsize=listen_dict["queue_maxsize"]
-			)
-	ELEMENTS.append(listen_dict["instance"])
+	listen_interface = build_listen_interface(	name=service_dict["name"],
+												host=listen_dict["host"],
+												port=listen_dict["port"],
+												network_type=listen_dict["network_type"],
+												max_clients=listen_dict["max_clients"],
+												queue_maxsize=listen_dict["queue_maxsize"])
+	listen_dict["instance"] = listen_interface
+	ELEMENTS.append(listen_interface)
 
 	# build output interface(s)
-	from load_balancer import RoundRobinLoadBalancer
-	from send_network_interface import SendNetworkInterface
-	for k,v in output_dict.items():
-		# define Interface 
-		load_balancer = RoundRobinLoadBalancer(host_list=[(h,v["port"]) for h in v["hosts"]])
-		output_dict[k]["instance"] = SendNetworkInterface(t_name=k+"_Interface",
-											load_balancer=load_balancer,
-											multiprocessing_worker=service_dict["multiprocessing"],
-											queue_maxsize=v["queue_maxsize"])
-		ELEMENTS.append(output_dict[k]["instance"])
+	for output_name,v in output_dict.items():
+		send_interface = build_output_interface(name=output_name,
+												peer_list=[(h,v["port"]) for h in v["hosts"]],
+												network_type=v["network_type"],
+												multiprocessing=service_dict["multiprocessing"],
+												queue_maxsize=v["queue_maxsize"])
+		output_dict[output_name]["instance"] = send_interface 
+		ELEMENTS.append(send_interface)
 
 	# build Worker and Processes
 	for k,v in pipeline_dict.items():
@@ -256,7 +322,7 @@ def build_structure(service_dict,listen_dict,pipeline_dict,output_dict):
 		# spawn_worker
 		for i in range(v["worker"]):
 			#keyword check
-			if v["output"] == "response":
+			if v["output"] == OUTPUT_RESPONSE:
 				out_pl = listen_dict["instance"].get_send_pipeline()			
 			else:
 				out_pl = output_dict[v["output"]]["instance"].get_send_pipeline()
@@ -267,11 +333,11 @@ def build_structure(service_dict,listen_dict,pipeline_dict,output_dict):
 			for p in v["processes"]: 
 				p_name=(list(p.keys())[0])
 				p_type=p[p_name]
-				p_class = process.get_process_by_name(p_name)
+				p_class = utilization.process.get_process_by_name(p_name)
 				if p_class == None:
 					exit_err(["{} is not a valid Process ...".format(p_name),"Use one of: {}".format(process.get_process_list())])
 				if p_type == "default":
-					p_default  = p_type
+					p_default  = p_class
 				else: 
 					processes.append((p_class(),p_type))
 
@@ -283,14 +349,23 @@ def build_structure(service_dict,listen_dict,pipeline_dict,output_dict):
 				t_name=k+"_worker",
 				incoming_pipeline=pl,
 				outgoing_pipeline=out_pl,
-				default_process=p_default,
+				default_process=p_default(),
 				multiprocessing_worker=service_dict["multiprocessing"])
 			for p_name,p_type in processes:
 				worker.add_process(p_name,p_type)
 			pipeline_dict[k]["instances"].append(worker)
 			ELEMENTS.append(worker)
 
-
+	# define forward for outputs to pipeline, output or response
+	for output_name,v in output_dict.items():
+		if v["response"] == OUTPUT_RESPONSE:
+			v["instance"].add_forward_pl(listen_dict["instance"].get_send_pipeline())
+		elif v["response"] in list(output_dict.keys()):
+			for on, v in output_dict.items():
+				if v["response"] == on:
+					v["instance"].add_forward_pl(on["instance"].get_send_pipeline())
+		elif v["response"] in list(pipeline_dict.keys()):
+			exit_err("Chaining output to another pipeline not implemented, yet")
 
 def main():
 	global ELEMENTS
@@ -325,15 +400,21 @@ def main():
 		sys.exit(1)
 
 	if args.print:
-		logging.info("Input FIle:\n "+pformat(yaml_object,indent=1,depth=8,width=160))
+		logging.info("Input File:\n "+pformat(yaml_object,indent=1,depth=8,width=160))
 	
 
 	s_dict,l_dict,p_dict,o_dict = parse_yaml(yaml_object=yaml_object)	
+	check_cross_references(	service_dict=s_dict,
+							listen_dict=l_dict,
+							pipeline_dict=p_dict,
+							output_dict=o_dict)
+
 	build_structure(service_dict=s_dict,
 					listen_dict=l_dict,
 					pipeline_dict=p_dict,
 					output_dict=o_dict)
 
+	
 	# start worker 
 	for k,v in p_dict.items():
 		for instance in v["instances"]:
