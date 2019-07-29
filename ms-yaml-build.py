@@ -15,19 +15,17 @@ RUNNING = True # controls main loop
 ELEMENTS = []
 
 OUTPUT_RESPONSE = "response"
+SERVICE_IMITATION = "service-imitation"
+PROCESS_DEFAULT_KEYWORD = "default"
 
 #SERVICE
 DEFAULT_MULTIPROCESSING_WORKERS = True
 DEFAULT_QUEUE_MAXSIZE = 500
-DEFAULT_NETWORK_TYPE = TCP_NETWORK
+DEFAULT_NETWORK_TYPE = helper.TCP_NETWORK_PROTOCOL
 # LISTEN
 DEFAULT_MAX_LISTEN_CLIENTS = 500
 # PIPELINE
 DEFAULT_NUM_WORKERS = 1
-
-
-
-
 
 SERVICE_DICT = {
 			"name":{
@@ -50,14 +48,20 @@ SERVICE_DICT = {
 				},
 			"pipelines":{
 				"default":{},
-				"required":True,
+				"required":False,
 				"description":"Pipelines dict entry ...",
+				"type":dict
+				},
+			"service-imitation":{
+				"default":{},
+				"required":False,
+				"description":"Imitation dict entry ...",
 				"type":dict
 				},
 			"outputs":{
 				"default":{},
 				"required":False,
-				"description":"Pipelines dict entry ...",
+				"description":"Outputs dict entry ...",
 				"type":dict
 				},
 			"queue_maxsize":{
@@ -120,12 +124,39 @@ PIPELINE_DICT = {
 				"description":"Probability to execute this pipeline",
 				"type":int
 				},
-		    "output":{
-		    	"default": OUTPUT_RESPONSE,
+			"output":{
+				"default": OUTPUT_RESPONSE,
 				"required":True,
 				"description":"output of pipeline. response || name of output",
 				"type":str
-			    }
+				}
+			}
+
+IMITATION_DICT = {
+			"model":{
+				"default":"model.csv",
+				"required":True,
+				"description":"Service model. Only required in service-imitation mode",
+				"type":str
+				},
+			"model_proc_key":{
+				"default":"proc_key",
+				"required":True,
+				"description":"Proc key to identify belonging metrics in model",
+				"type":str
+				},
+			"tmp_dir":{
+				"default":"/tmp",
+				"required":False,
+				"description":"Temp dir to store files for IO imitation",
+				"type":str
+				},
+			"output":{
+				"default": OUTPUT_RESPONSE,
+				"required":True,
+				"description":"output of imitation service. response || name of output",
+				"type":str
+				}
 			}
 
 OUTPUT_DICT = {
@@ -164,10 +195,8 @@ OUTPUT_DICT = {
 def sig_int_handler(signal, frame):
 	global RUNNING
 	global ELEMENTS
-
 	if RUNNING == False:
 		os.kill(signal.CTRL_C_EVENT, 0)
-		
 	RUNNING = False
 	for e in ELEMENTS:
 		e.stop()
@@ -183,7 +212,6 @@ def type_check(keyword,v_type):
 			keyword = bool(keyword)
 		except: 
 			return False
-
 	if type(keyword) is v_type: # typecheck
 		return True
 	return False
@@ -233,17 +261,23 @@ def parse_yaml(yaml_object):
 		for k,v in outputs.items():
 			o_dict[k] = parse_leaf(leaf=v,leaf_name="outputs",p_dict=OUTPUT_DICT)
 			logging.debug("Output ({}):\n ".format(k)+pformat(o_dict[k],indent=1,depth=8,width=160))
-	# PIPELINES
+	# PIPELINES | IMITATION
 	p_dict = {}
-	if "pipelines" in s_dict:
+	i_dict = {}
+	if s_dict["pipelines"]:
 		pipelines = s_dict["pipelines"] 
+		for k,v in pipelines.items():
+			p_dict[k] = parse_leaf(leaf=v,leaf_name="pipeline",p_dict=PIPELINE_DICT)
+			logging.debug("Pipelines ({}):\n ".format(k)+pformat(p_dict[k],indent=1,depth=8,width=160))
+	elif s_dict["service-imitation"]:
+		imitation = s_dict["service-imitation"]
+		i_dict = parse_leaf(leaf=imitation,leaf_name="service-imitation",p_dict=IMITATION_DICT)
+		logging.debug("Service-imitation:\n "+pformat(i_dict,indent=1,depth=8,width=160))
 	else: 
-		exit_err(["Missing \"pipelines\" entry at service leaf of the yaml file"])
-	for k,v in pipelines.items():
-		p_dict[k] = parse_leaf(leaf=v,leaf_name="pipeline",p_dict=PIPELINE_DICT)
-	return s_dict,l_dict,p_dict,o_dict
+		exit_err(["Missing \"pipelines\" or \"service-imitation\" entry at service leaf of the yaml file"])
+	return s_dict,l_dict,p_dict,i_dict,o_dict
 
-def check_cross_references(service_dict,listen_dict,pipeline_dict,output_dict):
+def check_cross_references(service_dict,listen_dict,pipeline_dict,imitation_dict,output_dict):
 	for k,v in pipeline_dict.items():	
 		if v["output"] == OUTPUT_RESPONSE:
 			pass
@@ -254,12 +288,12 @@ def check_cross_references(service_dict,listen_dict,pipeline_dict,output_dict):
 	# check if output response exists
 	output_names = list(output_dict.keys())
 	pipeline_names = list(pipeline_dict.keys())
+	imitation_names = list(imitation_dict.keys())
 	for output_name, v in output_dict.items():
-		if v["response"] in (output_names + pipeline_names) or v["response"] == OUTPUT_RESPONSE:
+		if v["response"] in (output_names + pipeline_names + imitation_names) or v["response"] == OUTPUT_RESPONSE: # NOT SURE
 			pass
 		else:
 			exit_err(["undefinded response ({}) in output {} ...".format(v["response"],output_name)])	
-
 
 def build_listen_interface(name,host,port,network_type,max_clients,queue_maxsize):
 	if network_type not in helper.AVAILABLE_NETWORK_TYPES:
@@ -289,8 +323,46 @@ def build_output_interface(name,peer_list,network_type,multiprocessing,queue_max
 											queue_maxsize=queue_maxsize)
 	return output_interface
 
+def get_output_pipeline(output_name,output_dict):
+	if output_name == OUTPUT_RESPONSE:
+		out_pl = listen_interface.get_send_pipeline()
+	else:
+		out_pl = output_dict[output_name]["instance"].get_send_pipeline()
 
-def build_structure(service_dict,listen_dict,pipeline_dict,output_dict):
+def build_pipeline_workers(name,listen_interface,worker_count,output_pl,processes,probability,multiprocessing,queue_maxsize):
+	# setup pipelines
+	pl = helper.get_queue(multiprocessing_worker=multiprocessing,maxsize=queue_maxsize)
+	# add to fork.handler
+	if not listen_dict["instance"].fork_handler.add_fork(pipeline=pl,probability=probability):
+		exit_err(["could not bind {} to ListenInterface (ForkHandler), wrong probabilities ...".format(pipeline_name)])
+	# spawn_worker
+	for i in range(worker_count):
+		# prepare process
+		p_default = None
+		processes = []
+		for p in processes:
+			p_name=(list(p.keys())[0])
+			p_type=p[p_name]
+			p_class = utilization.process.get_process_by_name(p_name)
+			if p_class == None:
+				exit_err(["{} is not a valid Process ...".format(p_name),"Use one of: {}".format(process.get_process_list())])
+			if p_type == PROCESS_DEFAULT_KEYWORD:
+				p_default  = p_class
+			else:
+				processes.append((p_class(),p_type))
+		if p_default == None:
+			exit_err(["No default process type set for process: {}...".format(k)])
+		# build process
+		worker = helper.spawn_worker(
+			t_name=name+"_worker",
+			incoming_pipeline=pl,
+			outgoing_pipeline=output_pl,
+			default_process=p_default(),
+			multiprocessing_worker=multiprocessing)
+		for p_name,p_type in processes:
+			worker.add_process(p_name,p_type)
+
+def build_structure(service_dict,listen_dict,pipeline_dict,imitation_dict,output_dict):
 	global ELEMENTS
 	listen_interface = build_listen_interface(	name=service_dict["name"],
 												host=listen_dict["host"],
@@ -311,50 +383,24 @@ def build_structure(service_dict,listen_dict,pipeline_dict,output_dict):
 		output_dict[output_name]["instance"] = send_interface 
 		ELEMENTS.append(send_interface)
 
-	# build Worker and Processes
-	for k,v in pipeline_dict.items():
-		pipeline_dict[k]["instances"]=[]
-		# setup pipelines
-		pl = helper.get_queue(multiprocessing_worker=service_dict["multiprocessing"],maxsize=listen_dict["queue_maxsize"])
-		# add to fork.handler
-		if not listen_dict["instance"].fork_handler.add_fork(pipeline=pl,probability=v["probability"]):
-			exit_err(["could not bind {} to ListenInterface (ForkHandler), wrong probabilities ...".format(k)])
-		# spawn_worker
-		for i in range(v["worker"]):
-			#keyword check
-			if v["output"] == OUTPUT_RESPONSE:
-				out_pl = listen_dict["instance"].get_send_pipeline()			
-			else:
-				out_pl = output_dict[v["output"]]["instance"].get_send_pipeline()
+	if imitation_dict:
+		# build imitation service
+		exit_err(["{} not implemented yet ...".format(SERVICE_IMITATION)])
 
-			# prepare process
-			p_default = None 
-			processes = []
-			for p in v["processes"]: 
-				p_name=(list(p.keys())[0])
-				p_type=p[p_name]
-				p_class = utilization.process.get_process_by_name(p_name)
-				if p_class == None:
-					exit_err(["{} is not a valid Process ...".format(p_name),"Use one of: {}".format(process.get_process_list())])
-				if p_type == "default":
-					p_default  = p_class
-				else: 
-					processes.append((p_class(),p_type))
-
-			if p_default == None:
-				exit_err(["No default process type set for process: {}...".format(k)])
-
-			# build process
-			worker = helper.spawn_worker(
-				t_name=k+"_worker",
-				incoming_pipeline=pl,
-				outgoing_pipeline=out_pl,
-				default_process=p_default(),
-				multiprocessing_worker=service_dict["multiprocessing"])
-			for p_name,p_type in processes:
-				worker.add_process(p_name,p_type)
-			pipeline_dict[k]["instances"].append(worker)
-			ELEMENTS.append(worker)
+	else:
+		# build Worker and Processes
+		for pipeline_name,v in pipeline_dict.items():
+			out_pl = get_output_pipeline(v["output"],output_dict)
+			workers = build_pipeline_workers(	name=pipeline_name,
+												listen_interface=listen_dict["instance"],
+												worker_count=v["worker"],
+												output_pl=out_pl,
+												processes=v["processes"],
+												probability=v["probability"],
+												multiprocessing=service_dict["multiprocessing"],
+												queue_maxsize=listen_dict["queue_maxsize"])
+			pipeline_dict[pipeline_name]["instances"] = workers
+			ELEMENTS.extend(workers)
 
 	# define forward for outputs to pipeline, output or response
 	for output_name,v in output_dict.items():
@@ -403,15 +449,19 @@ def main():
 		logging.info("Input File:\n "+pformat(yaml_object,indent=1,depth=8,width=160))
 	
 
-	s_dict,l_dict,p_dict,o_dict = parse_yaml(yaml_object=yaml_object)	
+	s_dict,l_dict,p_dict,i_dict,o_dict = parse_yaml(yaml_object=yaml_object)
+	print("ADS",i_dict)
+
 	check_cross_references(	service_dict=s_dict,
 							listen_dict=l_dict,
 							pipeline_dict=p_dict,
+							imitation_dict=i_dict,
 							output_dict=o_dict)
 
 	build_structure(service_dict=s_dict,
 					listen_dict=l_dict,
 					pipeline_dict=p_dict,
+					imitation_dict=i_dict,
 					output_dict=o_dict)
 
 	

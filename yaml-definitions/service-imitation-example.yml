@@ -1,0 +1,15 @@
+service:
+    # Service wide configurations
+    name: MS-Mysql
+    multiprocessing: True
+    # listen interface (only one possible)
+    listen:
+      host: 0.0.0.0
+      port: 5090
+      max_clients: 500
+    # define pipleines
+    service-imitation:
+      model: mysql.csv
+      model_proc_key: mysql
+      output: response 
+

@@ -125,7 +125,6 @@ def print_report(devices,duration):
 	logging.info("send msg: " + str(msg_send) + \
 		   ", recv msg: " + str(msg_recv))
 
-
 def sig_int_handler(signal, frame):
 	global RUNNING
 	global ELEMENTS
