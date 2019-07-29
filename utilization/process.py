@@ -81,7 +81,6 @@ class MemoryCacheOperation(Process):
 	def execute(self,packet):
 		self.vm.utilize_vm()
 
-
 class Compute(Process):
 
 	def __init__(self):
