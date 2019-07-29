@@ -19,15 +19,11 @@ OUTPUT_RESPONSE = "response"
 #SERVICE
 DEFAULT_MULTIPROCESSING_WORKERS = True
 DEFAULT_QUEUE_MAXSIZE = 500
-DEFAULT_NETWORK_TYPE = TCP_NETWORK
+DEFAULT_NETWORK_TYPE = helper.TCP_NETWORK_PROTOCOL
 # LISTEN
 DEFAULT_MAX_LISTEN_CLIENTS = 500
 # PIPELINE
 DEFAULT_NUM_WORKERS = 1
-
-
-
-
 
 SERVICE_DICT = {
 			"name":{
@@ -261,7 +257,7 @@ def check_cross_references(service_dict,listen_dict,pipeline_dict,output_dict):
 			exit_err(["undefinded response ({}) in output {} ...".format(v["response"],output_name)])	
 
 
-def build_listen_interface(name,host,port,network_type,max_clients,queue_maxsize):
+def build_listen_interface(name,host,port,network_type,multiprocessing,max_clients,queue_maxsize):
 	if network_type not in helper.AVAILABLE_NETWORK_TYPES:
 		raise NotSupportedError("Network type: {} not supported ...".format("network_type"))
 	
@@ -271,6 +267,7 @@ def build_listen_interface(name,host,port,network_type,max_clients,queue_maxsize
 			t_name=name+"_interface",
 			listen_host=host,
 			listen_port=port,
+			multiprocessing_worker=multiprocessing,
 			maximum_number_of_listen_clients=max_clients,
 			queue_maxsize=queue_maxsize)
 	return listen_interface
@@ -296,6 +293,7 @@ def build_structure(service_dict,listen_dict,pipeline_dict,output_dict):
 												host=listen_dict["host"],
 												port=listen_dict["port"],
 												network_type=listen_dict["network_type"],
+												multiprocessing=service_dict["multiprocessing"],
 												max_clients=listen_dict["max_clients"],
 												queue_maxsize=listen_dict["queue_maxsize"])
 	listen_dict["instance"] = listen_interface
@@ -335,7 +333,7 @@ def build_structure(service_dict,listen_dict,pipeline_dict,output_dict):
 				p_type=p[p_name]
 				p_class = utilization.process.get_process_by_name(p_name)
 				if p_class == None:
-					exit_err(["{} is not a valid Process ...".format(p_name),"Use one of: {}".format(process.get_process_list())])
+					exit_err(["{} is not a valid Process ...".format(p_name),"Use one of: {}".format(utilization.process.get_process_list())])
 				if p_type == "default":
 					p_default  = p_class
 				else: 
@@ -394,9 +392,9 @@ def main():
 
 	try:
 		stream = open(args.yaml, 'r')
-		yaml_object = yaml.load(stream)
-	except:
-		logging.error("{} file does not exists ...".format(args.yaml))
+		yaml_object = yaml.safe_load(stream)
+	except Exception as e:
+		logging.error("{} file does not exists or is not a correct yaml format ...\n{}".format(args.yaml,e))
 		sys.exit(1)
 
 	if args.print:
