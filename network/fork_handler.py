@@ -8,7 +8,7 @@ class ForkHandler(MSSimObject):
 		self.t_name = "ForkHandler"
 		self.conf["fork_list"] = []
 		self.conf["noop_probability"] = 100
-		self.metrics["fork_list_errors"] = 0
+		self.metrics["fork_l_errors"] = 0
 
 	def __str__(self):
 		return "{}: {}".format(self.t_name, self.conf["fork_list"])
@@ -35,7 +35,7 @@ class ForkHandler(MSSimObject):
 		old_fork_list = copy.copy(self.conf["fork_list"])
 		
 		if pos >= len(self.conf["fork_list"]):
-			self.metrics["fork_list_errors"] +=1
+			self.metrics["fork_l_errors"] +=1
 			logging.warning("{}: fork list only has {} elements, unable to delete element {}".format(str(self),len(self.conf["fork_list"]),pos))
 			return False		
 		self.conf["fork_list"].pop(pos)
@@ -51,7 +51,7 @@ class ForkHandler(MSSimObject):
 		try:
 			self.conf["fork_list"].insert(pos,(probability,pipeline))
 		except Exception as FL1:
-			self.metrics["fork_list_errors"] += 1
+			self.metrics["fork_l_errors"] += 1
 			logging.warning("Could not insert fork to positon {} in fork list of Source {}".format(str(pos),str(self)))
 			logging.warning("{}".format(str(FL1)))
 
@@ -67,7 +67,7 @@ class ForkHandler(MSSimObject):
 		try:
 			return self.conf["fork_list"][pos]
 		except Exception as FL3:
-			self.metrics["fork_list_errors"] += 1
+			self.metrics["fork_l_errors"] += 1
 			logging.warning("Fork Element {} in {}, not found".format(pos,self.__str__()))
 			logging.warning("{}".format(str(FL3)))
 			return None
