@@ -45,11 +45,9 @@ class MultiprocessingWorker(MSSimMultiProcessing):
 					process.execute(packet)
 					self.outgoing_pipeline.put(packet,timeout=self.conf["outgoing_pipeline_timeout"])
 					continue
-					
 			self.conf["default_process"].execute(packet)
-			self.outgoing_pipeline.put((packet),timeout=self.conf["outgoing_pipeline_timeout"])
+			self.outgoing_pipeline.put(packet,timeout=self.conf["outgoing_pipeline_timeout"])
  
-
 	def stop(self):
 		logging.info("{}: stopping worker ...".format(self.t_name))
 		self.conf["running"] = False

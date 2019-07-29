@@ -1,0 +1,8 @@
+# mwall2bitflow/ms-sim
+FROM mwall2bitflow/python-bitflow:0.0.1
+
+WORKDIR /opt/ms-sim
+COPY . .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN python setup.py install
+ENTRYPOINT ["ms-device-simulator"]

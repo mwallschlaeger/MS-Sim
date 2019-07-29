@@ -1,11 +1,12 @@
-import time, math, random
+import time
+import math
+import random
 from sim import MSSimObject
 
 import importlib.util
-spec = importlib.util.spec_from_file_location("stress_ng", "stress-ng/bindings/stress_ng.py")
+spec = importlib.util.spec_from_file_location("stress_ng", "{}/stress-ng/bindings/stress_ng.py".format(helper.ROOT_DIR))
 stress_ng = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(stress_ng)
-
 
 class HDD(MSSimObject):
 	

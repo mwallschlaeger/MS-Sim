@@ -11,6 +11,9 @@ from utilization.multiprocessing_worker import MultiprocessingWorker
 TCP_NETWORK_PROTOCOL ="TCP"
 AVAILABLE_NETWORK_TYPES = [TCP_NETWORK_PROTOCOL]
 
+import os
+ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
+
 def configure_logging(debug,filename=None):
 	if filename is None:
 		if debug:
@@ -29,7 +32,6 @@ def get_queue(multiprocessing_worker=False,maxsize=1000):
 	else:
 		return  queue.Queue(maxsize=maxsize) 
 	
-
 def spawn_worker(t_name,
 				incoming_pipeline,
 				outgoing_pipeline,
@@ -48,7 +50,6 @@ def spawn_worker(t_name,
 			incoming_pipeline=incoming_pipeline,
 			outgoing_pipeline=outgoing_pipeline,
 			default_process=default_process)
-
 
 def worker_parm_check(t_name,min_wait,max_wait):
 	ok = True

@@ -32,11 +32,11 @@ class MSSimObject():
 			n_v_list = name_value_tuple_list
 
 		for k,v in self.metrics.items():
-			n_v_list.append((self.t_name + "_" + k,v))
+			n_v_list.append((type(self).__name__ + "_" + k,v))
 
 		for child,v in self.children.items():
 			for k,v in v.metrics.items():
-				n_v_list.append((child + "_" + k,v))
+				n_v_list.append((type(self.children[child]).__name__ + "_" + k,v))
 		return n_v_list
 
 	def get_leaf(self,reset_metrics=False):
@@ -50,9 +50,13 @@ class MSSimObject():
 		return leaf
 
 	def reset_metrics(self):
-		for k,v in leaf["metrics"].items():
-			if not v.startswith("const"):
-				v = 0
+		for k in self.metrics.keys():
+			if not k.startswith("const") and not k.startswith("list"):
+				self.metrics[k] = 0
+			if k.startswith("list"):
+				self.metrics[k] = []
+			for child,v in self.children.items():
+				self.children[child].reset_metrics()
 
 class MSSimThread(threading.Thread,MSSimObject):
 

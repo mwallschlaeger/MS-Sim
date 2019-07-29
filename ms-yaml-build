@@ -295,7 +295,8 @@ def check_cross_references(service_dict,listen_dict,pipeline_dict,imitation_dict
 		else:
 			exit_err(["undefinded response ({}) in output {} ...".format(v["response"],output_name)])	
 
-def build_listen_interface(name,host,port,network_type,max_clients,queue_maxsize):
+def build_listen_interface(name,host,port,network_type,multiprocessing,max_clients,queue_maxsize):
+>>>>>>> 02c5b15b053dd5cb216feaaa4e39e76fea549550:ms-yaml-build
 	if network_type not in helper.AVAILABLE_NETWORK_TYPES:
 		raise NotSupportedError("Network type: {} not supported ...".format("network_type"))
 	
@@ -305,6 +306,7 @@ def build_listen_interface(name,host,port,network_type,max_clients,queue_maxsize
 			t_name=name+"_interface",
 			listen_host=host,
 			listen_port=port,
+			multiprocessing_worker=multiprocessing,
 			maximum_number_of_listen_clients=max_clients,
 			queue_maxsize=queue_maxsize)
 	return listen_interface
@@ -368,6 +370,7 @@ def build_structure(service_dict,listen_dict,pipeline_dict,imitation_dict,output
 												host=listen_dict["host"],
 												port=listen_dict["port"],
 												network_type=listen_dict["network_type"],
+												multiprocessing=service_dict["multiprocessing"],
 												max_clients=listen_dict["max_clients"],
 												queue_maxsize=listen_dict["queue_maxsize"])
 	listen_dict["instance"] = listen_interface
@@ -386,21 +389,51 @@ def build_structure(service_dict,listen_dict,pipeline_dict,imitation_dict,output
 	if imitation_dict:
 		# build imitation service
 		exit_err(["{} not implemented yet ...".format(SERVICE_IMITATION)])
-
 	else:
 		# build Worker and Processes
-		for pipeline_name,v in pipeline_dict.items():
-			out_pl = get_output_pipeline(v["output"],output_dict)
-			workers = build_pipeline_workers(	name=pipeline_name,
-												listen_interface=listen_dict["instance"],
-												worker_count=v["worker"],
-												output_pl=out_pl,
-												processes=v["processes"],
-												probability=v["probability"],
-												multiprocessing=service_dict["multiprocessing"],
-												queue_maxsize=listen_dict["queue_maxsize"])
-			pipeline_dict[pipeline_name]["instances"] = workers
-			ELEMENTS.extend(workers)
+		for k,v in pipeline_dict.items():
+			pipeline_dict[k]["instances"]=[]
+			# setup pipelines
+			pl = helper.get_queue(multiprocessing_worker=service_dict["multiprocessing"],maxsize=listen_dict["queue_maxsize"])
+			# add to fork.handler
+			if not listen_dict["instance"].fork_handler.add_fork(pipeline=pl,probability=v["probability"]):
+				exit_err(["could not bind {} to ListenInterface (ForkHandler), wrong probabilities ...".format(k)])
+			# spawn_worker
+			for i in range(v["worker"]):
+				#keyword check
+				if v["output"] == OUTPUT_RESPONSE:
+					out_pl = listen_dict["instance"].get_send_pipeline()			
+				else:
+					out_pl = output_dict[v["output"]]["instance"].get_send_pipeline()
+
+				# prepare process
+				p_default = None 
+				processes = []
+				for p in v["processes"]: 
+					p_name=(list(p.keys())[0])
+					p_type=p[p_name]
+					p_class = utilization.process.get_process_by_name(p_name)
+					if p_class == None:
+						exit_err(["{} is not a valid Process ...".format(p_name),"Use one of: {}".format(utilization.process.get_process_list())])
+					if p_type == "default":
+						p_default  = p_class
+					else: 
+						processes.append((p_class(),p_type))
+
+				if p_default == None:
+					exit_err(["No default process type set for process: {}...".format(k)])
+
+				# build process
+				worker = helper.spawn_worker(
+					t_name=k+"_worker",
+					incoming_pipeline=pl,
+					outgoing_pipeline=out_pl,
+					default_process=p_default(),
+					multiprocessing_worker=service_dict["multiprocessing"])
+				for p_name,p_type in processes:
+					worker.add_process(p_name,p_type)
+				pipeline_dict[k]["instances"].append(worker)
+				ELEMENTS.append(worker)
 
 	# define forward for outputs to pipeline, output or response
 	for output_name,v in output_dict.items():
@@ -440,9 +473,9 @@ def main():
 
 	try:
 		stream = open(args.yaml, 'r')
-		yaml_object = yaml.load(stream)
-	except:
-		logging.error("{} file does not exists ...".format(args.yaml))
+		yaml_object = yaml.safe_load(stream)
+	except Exception as e:
+		logging.error("{} file does not exists or is not a correct yaml format ...\n{}".format(args.yaml,e))
 		sys.exit(1)
 
 	if args.print:
@@ -450,7 +483,6 @@ def main():
 	
 
 	s_dict,l_dict,p_dict,i_dict,o_dict = parse_yaml(yaml_object=yaml_object)
-	print("ADS",i_dict)
 
 	check_cross_references(	service_dict=s_dict,
 							listen_dict=l_dict,

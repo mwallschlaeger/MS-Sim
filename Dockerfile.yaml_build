@@ -1,0 +1,14 @@
+# mwall2bitflow/ms-sim
+FROM python:3.7-slim
+
+RUN apt-get update && apt-get install -y make build-essential libaio-dev libapparmor-dev libattr1-dev libbsd-dev libcap-dev libgcrypt11-dev libkeyutils-dev libsctp-dev zlib1g-dev
+WORKDIR /opt/ms-sim
+COPY . .
+WORKDIR /opt/ms-sim/stress-ng
+RUN make
+WORKDIR /opt/ms-sim
+RUN pip install --no-cache-dir -r requirements.txt
+RUN python setup.py install
+RUN mkdir -p /yaml
+RUN cp yaml-definitions/default.yaml /yaml/default.yaml
+CMD python /opt/ms-sim/ms-yaml-build -y /yaml/default.yaml
